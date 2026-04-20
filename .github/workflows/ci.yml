@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SANDBOX_SKIP_LANDLOCK: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,7 +22,10 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Lint
         run: ruff check sandbox/ tests/
+      - name: Debug permissions
+        run: |
+          ls -la sandbox/profiles/
+          stat sandbox/profiles/minimal.yaml
+          python -c "open('sandbox/profiles/minimal.yaml').read()[:20]"
       - name: Test
         run: pytest -v --tb=short
-        env:
-          SANDBOX_SKIP_LANDLOCK: "1"
