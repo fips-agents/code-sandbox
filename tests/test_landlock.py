@@ -1,5 +1,6 @@
 """Tests for sandbox.landlock — Landlock LSM filesystem restriction wrapper."""
 
+import os
 import sys
 from unittest.mock import patch
 
@@ -143,6 +144,11 @@ class TestGracefulDegradation:
 
     @pytest.mark.skipif(
         sys.platform != "linux", reason="Landlock only available on Linux"
+    )
+    @pytest.mark.skipif(
+        os.environ.get("SANDBOX_SKIP_LANDLOCK") == "1",
+        reason="Landlock skipped — applying it in a test runner permanently "
+        "restricts the process, breaking subsequent tests",
     )
     def test_returns_abi_version_on_linux(self):
         """On Linux, the ABI version is queried (may be 0 if not enabled)."""
