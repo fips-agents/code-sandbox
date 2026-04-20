@@ -20,3 +20,5 @@ jobs:
         run: ruff check sandbox/ tests/
       - name: Test
         run: pytest -v --tb=short
+        env:
+          SANDBOX_SKIP_LANDLOCK: "1"

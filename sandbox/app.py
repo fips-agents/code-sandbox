@@ -9,6 +9,7 @@ behind three endpoints:
 """
 
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -25,7 +26,13 @@ app = FastAPI(title="Code Sandbox", description="Isolated Python code execution 
 # Apply Landlock filesystem restrictions at import time (before first
 # request).  Rules are inherited by subprocess children.  Degrades
 # gracefully on non-Linux or older kernels.
-_landlock_status = apply_sandbox_landlock()
+# Skip when SANDBOX_SKIP_LANDLOCK=1 (e.g., CI runners where the working
+# directory is outside the allowed Landlock paths).
+if os.environ.get("SANDBOX_SKIP_LANDLOCK") == "1":
+    from sandbox.landlock import LandlockStatus
+    _landlock_status = LandlockStatus(reason="Skipped via SANDBOX_SKIP_LANDLOCK=1")
+else:
+    _landlock_status = apply_sandbox_landlock()
 if _landlock_status.applied:
     logger.info("Landlock active (ABI v%d)", _landlock_status.abi_version)
 elif _landlock_status.reason:
