@@ -1,0 +1,34 @@
+name: Bug Report
+description: Report a bug in the code sandbox
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Include the Python code submitted to /execute
+      render: python
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Sandbox Profile
+      options:
+        - minimal
+        - data-science
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true

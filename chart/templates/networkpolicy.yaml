@@ -1,0 +1,15 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "code-sandbox.fullname" . }}
+  labels:
+    {{- include "code-sandbox.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "code-sandbox.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress: []
+{{- end }}

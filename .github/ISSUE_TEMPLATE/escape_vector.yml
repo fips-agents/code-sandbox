@@ -1,0 +1,60 @@
+name: Escape Vector
+description: Report a sandbox guardrail bypass or escape
+labels: ["security", "ctf"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing the sandbox security! Use this template to report a bypass or escape.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical (arbitrary code execution or full escape)
+        - High (guardrail bypass leading to dangerous access)
+        - Medium (partial bypass or significant info leak)
+        - Low (minor info leak or theoretical bypass)
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - AST guardrails (guardrails.py)
+        - Runtime preamble (executor.py)
+        - Subprocess isolation (executor.py)
+        - Landlock LSM (landlock.py)
+        - Profiles (profiles.py)
+        - Pipeline (pipeline.py)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: exploit
+    attributes:
+      label: Exploit Code
+      description: The exact Python code that demonstrates the bypass
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Which defense layer was bypassed and why?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What can an attacker do with this bypass?
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Suggested Fix
+      description: Optional — how would you fix this?

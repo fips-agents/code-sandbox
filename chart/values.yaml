@@ -1,0 +1,29 @@
+replicaCount: 1
+
+image:
+  repository: code-sandbox
+  tag: latest
+  pullPolicy: IfNotPresent
+
+profile: minimal
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+seccomp:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+
+service:
+  port: 8000
+
+route:
+  enabled: false
+  host: ""

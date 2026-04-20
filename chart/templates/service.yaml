@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "code-sandbox.fullname" . }}
+  labels:
+    {{- include "code-sandbox.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    {{- include "code-sandbox.selectorLabels" . | nindent 4 }}
