@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability (private)
+    url: https://github.com/fips-agents/code-sandbox/security/advisories/new
+    about: For vulnerabilities that should NOT be public (e.g., active exploits
+      affecting production deployments), report privately via GitHub Security
+      Advisories. For CTF-style findings, use the Escape Vector template instead.
