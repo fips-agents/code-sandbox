@@ -65,7 +65,7 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
 # These exist on multiple module objects (builtins, codecs, io, etc.)
 # and would bypass the bare-name _BLOCKED_CALLS check.
 _BLOCKED_CALL_ATTRS: frozenset[str] = frozenset(
-    {"open", "exec", "eval", "compile", "system", "popen"}
+    {"open", "exec", "eval", "compile", "system", "popen", "get_data"}
 )
 
 # Top-level module names whose *any* attribute access is blocked.
@@ -118,7 +118,9 @@ _BLOCKED_DUNDERS: frozenset[str] = frozenset(
      "__dict__", "__code__", "__closure__",  # namespace / code introspection
      "__name__",  # prevents __name__ spoof for runtime caller check bypass
      "__getattribute__", "__getattr__",  # universal attribute access primitives
-     "__self__"}  # builtin_function.__self__ exposes the builtins module
+     "__self__",  # builtin_function.__self__ exposes the builtins module
+     "__loader__", "__spec__", "__cached__",  # import machinery (SourceFileLoader.get_data)
+     "__func__", "__wrapped__"}  # bound method / functools unwrapping
 )
 
 # Frame, generator, coroutine, and traceback attributes that expose
@@ -230,6 +232,8 @@ _FORMAT_ATTR_RE: re.Pattern[str] = re.compile(
              "__class__", "__bases__", "__mro__",
              "__dict__", "__code__", "__closure__", "__name__",
              "__getattribute__", "__getattr__", "__self__",
+             "__loader__", "__spec__", "__cached__",
+             "__func__", "__wrapped__",
              "f_globals", "f_locals", "f_builtins", "f_code",
              "gi_frame", "gi_code", "cr_frame", "cr_code",
              "ag_frame", "ag_code", "tb_frame"}

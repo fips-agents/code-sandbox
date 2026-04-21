@@ -922,3 +922,12 @@ class TestProcessEscape:
         assert any("open" in v for v in violations), (
             f"open as attribute not blocked: {violations}"
         )
+
+    @pytest.mark.escape_vector
+    def test_loader_get_data_blocked(self):
+        """module.__loader__.get_data() reads files — __loader__ must be blocked."""
+        code = 'import json\ndata = json.__loader__.get_data("/etc/passwd")'
+        violations = validate_code(code)
+        assert any("__loader__" in v for v in violations), (
+            f"__loader__ not blocked: {violations}"
+        )
