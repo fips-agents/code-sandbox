@@ -108,7 +108,8 @@ _BLOCKED_DUNDERS: frozenset[str] = frozenset(
      "__traceback__", "__import__",
      "__class__", "__bases__", "__mro__",  # class hierarchy traversal
      "__dict__", "__code__", "__closure__",  # namespace / code introspection
-     "__name__"}  # prevents __name__ spoof for runtime caller check bypass
+     "__name__",  # prevents __name__ spoof for runtime caller check bypass
+     "__getattribute__", "__getattr__"}  # universal attribute access primitives
 )
 
 # Frame, generator, coroutine, and traceback attributes that expose
@@ -215,6 +216,7 @@ _FORMAT_ATTR_RE: re.Pattern[str] = re.compile(
              "__traceback__", "__import__",
              "__class__", "__bases__", "__mro__",
              "__dict__", "__code__", "__closure__", "__name__",
+             "__getattribute__", "__getattr__",
              "f_globals", "f_locals", "f_builtins", "f_code",
              "gi_frame", "gi_code", "cr_frame", "cr_code",
              "ag_frame", "ag_code", "tb_frame"}

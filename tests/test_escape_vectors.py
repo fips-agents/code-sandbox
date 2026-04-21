@@ -841,3 +841,21 @@ class TestProcessEscape:
         code = "signal.raise_signal(9)"
         violations = validate_code(code)
         assert any("signal" in v for v in violations), f"signal module not blocked: {violations}"
+
+    @pytest.mark.escape_vector
+    def test_getattribute_bypass_blocked(self):
+        """object.__getattribute__ must be blocked — bypasses all AST attr checks."""
+        code = "object.__getattribute__(func, name)"
+        violations = validate_code(code)
+        assert any("__getattribute__" in v for v in violations), (
+            f"__getattribute__ not blocked: {violations}"
+        )
+
+    @pytest.mark.escape_vector
+    def test_getattr_dunder_blocked(self):
+        """__getattr__ must be blocked — fallback attribute access primitive."""
+        code = "x.__getattr__('anything')"
+        violations = validate_code(code)
+        assert any("__getattr__" in v for v in violations), (
+            f"__getattr__ not blocked: {violations}"
+        )
