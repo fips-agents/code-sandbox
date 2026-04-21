@@ -65,4 +65,4 @@ Reveal as needed.
 
 ## Timeline
 
-The challenge runs from 2026-04-22 through 2026-04-29. Findings filed after the deadline are still welcome but don't count for scoring.
+**Start date: TBD.** The challenge will run for one week once announced. Findings filed after the deadline are still welcome but don't count for scoring.

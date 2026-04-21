@@ -30,7 +30,7 @@
 
 ## Not on the board but tracked
 
-- #1 — CTF challenge (running April 22-29)
+- #1 — CTF challenge (start date TBD — hardening #13-#16 first)
 - #10 — Sandbox-as-wrapper pattern (security proxy for untrusted agents)
 
 ## OpenShell upstream — waiting for feedback
