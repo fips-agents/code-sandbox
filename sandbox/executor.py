@@ -32,7 +32,7 @@ def _build_memory_preamble(limit_mb: int) -> str:
     )
 
 
-def _build_preamble() -> str:
+def _build_preamble(*, preimport: list[str] | None = None) -> str:
     """Build a runtime preamble that restricts imports in the subprocess.
 
     This is defense-in-depth: even if AST guardrails are bypassed via
@@ -44,11 +44,26 @@ def _build_preamble() -> str:
     ``statistics`` → ``numbers``) that would break with an allowlist.
     The AST guardrails enforce the allowlist; this layer blocks modules
     that are never needed by allowed modules' dependency chains.
+
+    Args:
+        preimport: Modules to import BEFORE applying runtime restrictions.
+            Heavy libraries like pandas call ``open()`` during initialisation;
+            pre-importing them here lets them load with full builtins available,
+            while restrictions still apply to user-supplied code.
     """
+    parts: list[str] = []
+
+    # Pre-import allowed libraries before restrictions are applied.
+    # pandas (via six) calls open() and imports builtins during __init__;
+    # doing this here means those calls succeed before we remove open/builtins.
+    if preimport:
+        for mod in preimport:
+            parts.append(f"import {mod}\n")
+
     # Modules that are dangerous AND not in any allowed module's
     # transitive dependency chain.  os, importlib, and marshal are
     # excluded from this list because they ARE needed internally.
-    return (
+    parts.append(
         "def __sandbox_setup__():\n"
         "    import sys as _sys\n"
         "    _denied = frozenset({\n"
@@ -90,6 +105,8 @@ def _build_preamble() -> str:
         "del __sandbox_setup__\n"
     )
 
+    return "".join(parts)
+
 
 @dataclasses.dataclass
 class ExecutionResult:
@@ -105,6 +122,7 @@ async def execute_code(
     *,
     runtime_restrict: bool = True,
     memory_limit_mb: int = 200,
+    preimport: list[str] | None = None,
 ) -> ExecutionResult:
     """Execute *code* in an isolated Python subprocess and return the result.
 
@@ -122,7 +140,7 @@ async def execute_code(
         and a flag indicating whether the process was killed due to timeout.
     """
     if runtime_restrict:
-        code = _build_preamble() + code
+        code = _build_preamble(preimport=preimport) + code
     if memory_limit_mb > 0:
         code = _build_memory_preamble(memory_limit_mb) + code
 

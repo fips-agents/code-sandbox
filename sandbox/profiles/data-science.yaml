@@ -10,6 +10,11 @@ description: >
 
 extends: minimal
 
+preimport:
+  - numpy
+  - pandas
+  - scipy
+
 imports:
   additional:
     - numpy

@@ -160,3 +160,23 @@ def test_get_active_profile_reads_env_var(monkeypatch):
     monkeypatch.setenv("SANDBOX_PROFILE", "data-science")
     profile = get_active_profile()
     assert profile.name == "data-science", f"expected 'data-science', got: {profile.name!r}"
+
+
+# ---------------------------------------------------------------------------
+# preimport field
+# ---------------------------------------------------------------------------
+
+
+def test_minimal_preimport_empty():
+    profile = load_profile("minimal")
+    assert profile.preimport == [], (
+        f"expected empty preimport for minimal, got: {profile.preimport}"
+    )
+
+
+def test_data_science_preimport():
+    """Data science profile declares preimport for heavy libraries."""
+    profile = load_profile("data-science")
+    assert "numpy" in profile.preimport, f"numpy missing from preimport: {profile.preimport}"
+    assert "pandas" in profile.preimport, f"pandas missing from preimport: {profile.preimport}"
+    assert "scipy" in profile.preimport, f"scipy missing from preimport: {profile.preimport}"

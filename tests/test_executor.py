@@ -76,3 +76,26 @@ async def test_unicode_output():
     result = await execute_code('print("hello 世界")')
     assert "世界" in result.stdout, f"unexpected stdout: {result.stdout!r}"
     assert result.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_preimport_modules_available():
+    """Pre-imported modules are accessible even after runtime restrictions apply."""
+    # json is always available and has no heavy deps — good canary for the mechanism.
+    result = await execute_code(
+        "import json\nprint(json.dumps({'ok': True}))",
+        timeout=5.0,
+        preimport=["json"],
+    )
+    assert result.exit_code == 0, (
+        f"unexpected exit_code: {result.exit_code}; stderr: {result.stderr!r}"
+    )
+    assert '{"ok": true}' in result.stdout, f"unexpected stdout: {result.stdout!r}"
+
+
+@pytest.mark.asyncio
+async def test_preimport_none_is_harmless():
+    """Passing preimport=None behaves identically to the default."""
+    result = await execute_code("print(1 + 1)", timeout=5.0, preimport=None)
+    assert result.exit_code == 0, f"unexpected exit_code: {result.exit_code}"
+    assert result.stdout == "2\n", f"unexpected stdout: {result.stdout!r}"

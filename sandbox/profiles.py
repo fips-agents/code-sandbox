@@ -49,6 +49,7 @@ class Profile(BaseModel):
     blocklist: list[tuple[str, str]] = Field(default_factory=list)
     resources: ProfileResources = Field(default_factory=ProfileResources)
     scan_stages: ScanStages = Field(default_factory=ScanStages)
+    preimport: list[str] = Field(default_factory=list)
 
 
 def load_profile(name: str) -> Profile:
@@ -115,6 +116,11 @@ def load_profile(name: str) -> Profile:
     else:
         scan_stages = ScanStages(**stages_raw)
 
+    # Pre-import list — child overrides parent entirely.
+    preimport = raw.get("preimport", [])
+    if parent and not preimport:
+        preimport = list(parent.preimport)
+
     return Profile(
         name=raw.get("name", name),
         description=raw.get("description", ""),
@@ -122,6 +128,7 @@ def load_profile(name: str) -> Profile:
         blocklist=blocklist,
         resources=resources,
         scan_stages=scan_stages,
+        preimport=preimport,
     )
 
 
