@@ -11,6 +11,7 @@ through are VULNERABILITIES that need fixing.
 Run with: pytest sandbox/tests/test_escape_vectors.py -v
 """
 
+import sys
 import textwrap
 
 import pytest
@@ -688,9 +689,9 @@ class TestResourceExhaustion:
 
     @pytest.mark.escape_vector
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason="Memory limits enforced by container cgroup (256Mi), "
-        "not by the sandbox application. Passes in CI/local.",
+    @pytest.mark.skipif(
+        sys.platform != "linux",
+        reason="RLIMIT_AS enforcement is Linux-specific",
     )
     async def test_memory_exhaustion(self):
         """Attempt to allocate 200MB in a memory-limited sandbox."""

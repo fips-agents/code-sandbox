@@ -14,6 +14,24 @@ _MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB per stream
 _TRUNCATION_NOTE = "\n[output truncated at 50 KB]"
 
 
+def _build_memory_preamble(limit_mb: int) -> str:
+    """Build a preamble that applies RLIMIT_AS to the subprocess.
+
+    Must run before any imports so that subsequent memory allocations are
+    subject to the limit.  Wrapped in try/except for graceful degradation on
+    platforms where RLIMIT_AS is unavailable (e.g. macOS with strict limits).
+    """
+    limit_bytes = limit_mb * 1024 * 1024
+    return (
+        "try:\n"
+        "    import resource as _res\n"
+        f"    _res.setrlimit(_res.RLIMIT_AS, ({limit_bytes}, {limit_bytes}))\n"
+        "    del _res\n"
+        "except Exception:\n"
+        "    pass\n"
+    )
+
+
 def _build_preamble() -> str:
     """Build a runtime preamble that restricts imports in the subprocess.
 
@@ -86,6 +104,7 @@ async def execute_code(
     timeout: float = 10.0,
     *,
     runtime_restrict: bool = True,
+    memory_limit_mb: int = 200,
 ) -> ExecutionResult:
     """Execute *code* in an isolated Python subprocess and return the result.
 
@@ -95,6 +114,8 @@ async def execute_code(
         runtime_restrict: If True (default), a runtime preamble is prepended
             that blocks imports of dangerous modules (subprocess, socket,
             ctypes, etc.).  Defense-in-depth against AST bypasses.
+        memory_limit_mb: RLIMIT_AS limit in megabytes applied inside the
+            subprocess.  Set to 0 to disable.  Defaults to 200 MB.
 
     Returns:
         An :class:`ExecutionResult` with captured stdout, stderr, exit code,
@@ -102,6 +123,8 @@ async def execute_code(
     """
     if runtime_restrict:
         code = _build_preamble() + code
+    if memory_limit_mb > 0:
+        code = _build_memory_preamble(memory_limit_mb) + code
 
     tmp_path: str | None = None
     try:

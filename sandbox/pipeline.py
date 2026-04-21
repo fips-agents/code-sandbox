@@ -83,7 +83,8 @@ async def run_pipeline(
             return PipelineResult(rejected=True, violations=violations)
 
     # Execute.
-    result = await execute_code(code, timeout)
+    memory_mb = profile.resources.subprocess_memory_mb
+    result = await execute_code(code, timeout, memory_limit_mb=memory_mb)
 
     # Post-execution stages.
     for stage_name in profile.scan_stages.post:
