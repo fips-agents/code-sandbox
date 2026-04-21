@@ -24,6 +24,8 @@ from __future__ import annotations
 import ast
 import re
 
+from sandbox.patterns import _PATH_TRAVERSAL_RE, _SECRET_PATTERNS, _SQL_KEYWORD_RE
+
 # Default allowed imports — used when no profile is passed (backward compat).
 # Matches the ``minimal`` profile.
 _DEFAULT_ALLOWED_IMPORTS: frozenset[str] = frozenset(
@@ -190,36 +192,6 @@ _WEAK_CRYPTO_CALLS: frozenset[tuple[str, str]] = frozenset(
         ("hashlib", "sha1"),
     }
 )
-
-# Compiled regexes for credential / secret detection in string literals.
-_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("AWS access key ID", re.compile(r"AKIA[0-9A-Z]{16}")),
-    (
-        "generic secret assignment",
-        re.compile(
-            r"(?:api[_-]?key|api[_-]?secret|token|secret[_-]?key"
-            r"|password|passwd|auth[_-]?token)"
-            r"""\s*[:=]\s*['"][A-Za-z0-9+/=_-]{16,}['"]"""
-        ),
-    ),
-    (
-        "PEM private key",
-        re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"),
-    ),
-    (
-        "high-entropy hex string",
-        re.compile(r"\b[0-9a-fA-F]{32,}\b"),
-    ),
-]
-
-# SQL keyword pattern for injection detection.
-_SQL_KEYWORD_RE: re.Pattern[str] = re.compile(
-    r"\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|UNION)\b",
-    re.IGNORECASE,
-)
-
-# Path traversal pattern — any string containing "../".
-_PATH_TRAVERSAL_RE: re.Pattern[str] = re.compile(r"\.\./")
 
 # Format string attribute traversal — detects dunders and blocked frame
 # attrs inside format spec braces, e.g. '{0.__globals__}'.format(obj).
