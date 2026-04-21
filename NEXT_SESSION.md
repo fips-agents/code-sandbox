@@ -28,10 +28,10 @@ callers, or pre-importing pandas before applying the hook.
 OCSF-compatible structured logging for all security decisions. Per-layer
 enforce/observe toggle. JSON to stdout for OpenShift log collection.
 
-### 4. #6 — Landlock LSM wrapper (gated on OCP 4.18+)
+### 4. #6 — Landlock LSM wrapper (UNBLOCKED — OCP 4.20)
 Research is complete, `sandbox/landlock.py` exists. Production-ready it with
-runtime ABI detection, graceful degradation, and env var gate. Blocked on
-OCP 4.18+ adoption in our clusters.
+runtime ABI detection, graceful degradation, and env var gate. Clusters are
+on OCP 4.20 (RHEL 9.6+ kernel, Landlock ABI 5 enabled by default).
 
 ## Low priority
 
