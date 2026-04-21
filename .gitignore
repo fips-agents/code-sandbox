@@ -12,3 +12,8 @@ htmlcov/
 .coverage
 *.egg
 .env
+haiku-ctf-runner.md
+ctf-model-escape-report.md
+
+# Added by ggshield
+.cache_ggshield

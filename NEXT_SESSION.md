@@ -1,42 +1,32 @@
 # Next Session
 
-## Completed this session (2026-04-20)
+## Completed this session (2026-04-21)
 
-- **#2** — AST guardrails hardened: blocked process signals, `__getattribute__`/
-  `__getattr__`/`__self__`/`__loader__`/`__func__`/`__wrapped__`, builtins/bltns/
-  codecs/io/pathlib/tempfile aliases, call aliasing, `open` as universal attribute,
-  runtime builtins purge. Haiku failed to escape after 5 rounds (75+ techniques).
-- **#5** — SeccompProfile CRD shipped in Helm chart (v0.6.0). Deployed to both
-  code-sandbox-agent and ecosystem-test namespaces. SCC updated with profile
-  paths and RoleBinding for ecosystem-test.
-- **#7** — ToolInspector implemented: 5 scan categories (secrets, SQL injection,
-  path traversal, C2 patterns, prompt injection), shared patterns module, 26 tests.
+- **#3** — Application-level memory limit via `resource.setrlimit(RLIMIT_AS)`
+  in subprocess preamble. `subprocess_memory_mb` added to ProfileResources
+  (200 MB minimal, 800 MB data-science). `test_memory_exhaustion` converted
+  from xfail to passing (skipif non-Linux).
+- **#4** — pandas/six compatibility via pre-import mechanism. Profile `preimport`
+  list runs before runtime restrictions are applied, so pandas/numpy/scipy load
+  with full builtins (including `open`). Data-science profile declares preimport.
+- **#6** — Landlock LSM production-ready for OCP 4.20 (ABI v5). Added ABI v4
+  network restrictions (deny all TCP), ABI v5 scope restrictions (abstract unix
+  sockets, signals). `_attr_size_for_abi()` sizes the struct correctly per ABI.
+  `SANDBOX_LANDLOCK_EXTRA_RO` env var for runtime path injection.
+- **#8** — OCSF structured audit trail (class_uid=2001). `sandbox/audit.py`
+  emits JSON security findings to stdout. Per-layer enforce/observe mode via
+  profile `audit.mode` config. Pipeline emits events for violations, timeouts,
+  and OOM kills. Landlock startup events in app.py.
+- **#9** — NetworkPolicy Ingress added to Helm chart. Default: only pods with
+  `code-sandbox-client=true` label on port 8000. Configurable via
+  `networkPolicy.ingressFrom` in values.yaml. Zero-egress unchanged.
 
-## Medium priority
+## Completed previously (2026-04-20)
 
-### 1. #3 — Application-level memory limit
-Use `resource.setrlimit(RLIMIT_AS)` in the subprocess to limit memory below
-the 256Mi cgroup threshold. Convert `test_memory_exhaustion` from xfail to
-passing.
-
-### 2. #4 — pandas/six compatibility
-The runtime import hook blocks `builtins` imports, breaking pandas via its
-`six` dependency. Evaluate allowing `builtins` imports from non-`__main__`
-callers, or pre-importing pandas before applying the hook.
-
-### 3. #8 — Structured audit trail + enforce/observe mode
-OCSF-compatible structured logging for all security decisions. Per-layer
-enforce/observe toggle. JSON to stdout for OpenShift log collection.
-
-### 4. #6 — Landlock LSM wrapper (UNBLOCKED — OCP 4.20)
-Research is complete, `sandbox/landlock.py` exists. Production-ready it with
-runtime ABI detection, graceful degradation, and env var gate. Clusters are
-on OCP 4.20 (RHEL 9.6+ kernel, Landlock ABI 5 enabled by default).
-
-## Low priority
-
-### 5. #9 — NetworkPolicy manifest in Helm chart
-Already enforced on cluster. Package in the chart for portability.
+- **#2** — AST guardrails hardened (blocked signals, dunders, aliases, builtins
+  purge). Haiku failed to escape after 5 rounds (75+ techniques).
+- **#5** — SeccompProfile CRD shipped in Helm chart (v0.6.0).
+- **#7** — ToolInspector implemented (5 scan categories, 26 tests).
 
 ## Not on the board but tracked
 
