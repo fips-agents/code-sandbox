@@ -22,6 +22,9 @@ COPY --chmod=644 sandbox/__init__.py sandbox/app.py sandbox/executor.py sandbox/
 
 COPY --chmod=644 sandbox/profiles/ sandbox/profiles/
 
+# CTF challenge flag
+RUN echo 'FLAG{fips-sandbox-c11b74a2112894f0}' > /opt/app-root/flag.txt
+
 ENV SANDBOX_PROFILE=${PROFILE}
 
 EXPOSE 8000

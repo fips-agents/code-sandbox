@@ -1,0 +1,23 @@
+# Values override for standalone CTF sandbox deployment.
+# Exposes /execute directly via Route for the primary CTF track.
+#
+# Usage:
+#   helm upgrade --install ctf-sandbox ./chart \
+#     -f chart/values-ctf.yaml \
+#     --context=fips-rhoai -n ecosystem-test
+
+image:
+  repository: image-registry.openshift-image-registry.svc:5000/ecosystem-test/ecosystem-test-sandbox
+  tag: latest
+  pullPolicy: Always
+
+profile: minimal
+
+route:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+
+seccomp:
+  enabled: false

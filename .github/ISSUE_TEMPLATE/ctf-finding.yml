@@ -1,0 +1,48 @@
+name: CTF Finding
+description: Report a sandbox security finding from the CTF challenge
+title: "[CTF] "
+labels: ["ctf", "security"]
+body:
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Finding Tier
+      options:
+        - Info leak (1 pt)
+        - Guardrail bypass (3 pts)
+        - File read (5 pts)
+        - Arbitrary exec (10 pts)
+        - Network escape (15 pts)
+    validations:
+      required: true
+  - type: dropdown
+    id: track
+    attributes:
+      label: Track
+      options:
+        - Primary (direct sandbox)
+        - Bonus (agent-mediated, 2x points)
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code / Payload
+      description: The exact code you submitted to the sandbox (or the prompt you used for bonus track)
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: layers
+    attributes:
+      label: Layers Bypassed
+      description: Which defense layer(s) did this bypass? What was the output?
+    validations:
+      required: true
+  - type: textarea
+    id: analysis
+    attributes:
+      label: Root Cause Analysis
+      description: Why does this work? What's the underlying weakness?
+    validations:
+      required: false
