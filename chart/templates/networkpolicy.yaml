@@ -10,6 +10,20 @@ spec:
     matchLabels:
       {{- include "code-sandbox.selectorLabels" . | nindent 6 }}
   policyTypes:
+    - Ingress
     - Egress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.ingressFrom }}
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+        {{- else }}
+        # Default: only pods with code-sandbox-client label can connect.
+        - podSelector:
+            matchLabels:
+              code-sandbox-client: "true"
+        {{- end }}
+      ports:
+        - port: 8000
+          protocol: TCP
   egress: []
 {{- end }}

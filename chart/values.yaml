@@ -23,6 +23,14 @@ seccomp:
 
 networkPolicy:
   enabled: true
+  # Override to customize which pods can reach the sandbox.
+  # Default: pods with label code-sandbox-client=true.
+  # Example: allow from a specific namespace:
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           name: my-agent-ns
+  ingressFrom: []
 
 service:
   port: 8000
