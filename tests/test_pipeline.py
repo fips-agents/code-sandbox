@@ -155,3 +155,31 @@ async def test_run_pipeline_unknown_stage_returns_error(monkeypatch):
     assert any("does_not_exist" in v for v in result.violations), (
         f"expected stage name in violation messages: {result.violations}"
     )
+
+
+# ---------------------------------------------------------------------------
+# enforce/observe mode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_observe_mode_allows_violations():
+    """In observe mode, violations are logged but code still executes."""
+    from sandbox.profiles import AuditConfig, Profile, ProfileResources, ScanStages
+
+    # Create a profile with ast_scan in observe mode
+    profile = Profile(
+        name="test-observe",
+        allowed_imports=frozenset({"math"}),
+        audit=AuditConfig(mode={"ast_scan": "observe"}),
+        resources=ProfileResources(),
+        scan_stages=ScanStages(pre=["ast_scan"]),
+    )
+
+    # This code imports os which violates the policy
+    code = "import os\nprint('hello')"
+    result = await run_pipeline(code, profile, timeout=5.0)
+
+    # In observe mode, the code should NOT be rejected
+    assert not result.rejected
+    assert result.result is not None

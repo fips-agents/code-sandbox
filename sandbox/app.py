@@ -10,14 +10,28 @@ behind three endpoints:
 
 import logging
 import os
+import sys
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from sandbox.audit import SecurityEvent, Severity
+from sandbox.audit import emit as audit_emit
 from sandbox.landlock import apply_sandbox_landlock
 from sandbox.pipeline import run_pipeline
 from sandbox.profiles import Profile, get_active_profile
+
+# Configure structured JSON logging for the audit logger.
+# Only add the handler if one isn't already present (prevents duplicate logs
+# when running under pytest or multiple workers).
+_audit_logger = logging.getLogger("sandbox.audit")
+if not _audit_logger.handlers:
+    _audit_handler = logging.StreamHandler(sys.stdout)
+    _audit_handler.setFormatter(logging.Formatter("%(message)s"))
+    _audit_logger.addHandler(_audit_handler)
+    _audit_logger.setLevel(logging.INFO)
+    _audit_logger.propagate = False  # Don't duplicate to root logger
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +53,25 @@ if _landlock_status.applied:
         _landlock_status.abi_version,
         ", ".join(_landlock_status.rules_applied),
     )
+    audit_emit(SecurityEvent(
+        layer="landlock",
+        action="applied",
+        message=f"Landlock ABI v{_landlock_status.abi_version} active",
+        severity=Severity.INFO,
+        details={
+            "abi_version": _landlock_status.abi_version,
+            "rules": _landlock_status.rules_applied,
+        },
+    ))
 elif _landlock_status.reason:
     logger.info("Landlock not applied: %s", _landlock_status.reason)
+    audit_emit(SecurityEvent(
+        layer="landlock",
+        action="degraded",
+        message=f"Landlock not applied: {_landlock_status.reason}",
+        severity=Severity.LOW,
+        details={"reason": _landlock_status.reason},
+    ))
 
 # Load profile once at startup.
 _profile: Profile = get_active_profile()

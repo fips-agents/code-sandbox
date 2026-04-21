@@ -40,6 +40,16 @@ class ScanStages(BaseModel):
     post: list[str] = Field(default_factory=list)
 
 
+class AuditConfig(BaseModel):
+    """Per-layer enforce/observe mode configuration."""
+
+    mode: dict[str, str] = Field(default_factory=dict)
+
+    def get_mode(self, layer: str) -> str:
+        """Return 'enforce' or 'observe' for a given layer. Default: enforce."""
+        return self.mode.get(layer, "enforce")
+
+
 class Profile(BaseModel):
     """Resolved sandbox profile — ready for use by guardrails and pipeline."""
 
@@ -50,6 +60,7 @@ class Profile(BaseModel):
     resources: ProfileResources = Field(default_factory=ProfileResources)
     scan_stages: ScanStages = Field(default_factory=ScanStages)
     preimport: list[str] = Field(default_factory=list)
+    audit: AuditConfig = Field(default_factory=AuditConfig)
 
 
 def load_profile(name: str) -> Profile:
@@ -121,6 +132,13 @@ def load_profile(name: str) -> Profile:
     if parent and not preimport:
         preimport = list(parent.preimport)
 
+    # Audit config — child overrides parent entirely.
+    audit_raw = raw.get("audit", {})
+    if parent and not audit_raw:
+        audit = parent.audit
+    else:
+        audit = AuditConfig(**audit_raw)
+
     return Profile(
         name=raw.get("name", name),
         description=raw.get("description", ""),
@@ -129,6 +147,7 @@ def load_profile(name: str) -> Profile:
         resources=resources,
         scan_stages=scan_stages,
         preimport=preimport,
+        audit=audit,
     )
 
 

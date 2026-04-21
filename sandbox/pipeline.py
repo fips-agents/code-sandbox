@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from sandbox.audit import SecurityEvent, Severity, emit
 from sandbox.executor import ExecutionResult, execute_code
 from sandbox.guardrails import blocklist_audit, validate_code
 from sandbox.profiles import Profile
@@ -80,13 +81,45 @@ async def run_pipeline(
             )
         violations = stage_fn(code, profile)
         if violations:
-            return PipelineResult(rejected=True, violations=violations)
+            mode = profile.audit.get_mode(stage_name)
+            # Emit audit event for each violation.
+            for v in violations:
+                emit(SecurityEvent(
+                    layer=stage_name,
+                    action="violation",
+                    message=v,
+                    severity=Severity.HIGH,
+                    mode=mode,
+                ))
+            if mode == "enforce":
+                return PipelineResult(rejected=True, violations=violations)
+            # observe mode: log but continue execution
 
     # Execute.
     memory_mb = profile.resources.subprocess_memory_mb
     result = await execute_code(
         code, timeout, memory_limit_mb=memory_mb, preimport=profile.preimport or None,
     )
+
+    if result.timed_out:
+        emit(SecurityEvent(
+            layer="timeout",
+            action="timeout_kill",
+            message=f"Execution killed after {timeout}s",
+            severity=Severity.MEDIUM,
+            details={"timeout_seconds": timeout},
+        ))
+
+    if result.exit_code != 0 and not result.timed_out:
+        # Check stderr for memory limit hits
+        if "MemoryError" in result.stderr:
+            emit(SecurityEvent(
+                layer="memory",
+                action="oom_kill",
+                message=f"Process hit memory limit ({memory_mb}MB)",
+                severity=Severity.MEDIUM,
+                details={"memory_limit_mb": memory_mb},
+            ))
 
     # Post-execution stages.
     for stage_name in profile.scan_stages.post:
