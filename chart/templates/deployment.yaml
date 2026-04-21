@@ -49,7 +49,7 @@ spec:
             {{- if .Values.seccomp.enabled }}
             seccompProfile:
               type: Localhost
-              localhostProfile: operator/{{ include "code-sandbox.fullname" . }}-sandbox.json
+              localhostProfile: operator/{{ .Values.seccomp.profileName | default (printf "%s-sandbox" (include "code-sandbox.fullname" .)) }}.json
             {{- end }}
           volumeMounts:
             - name: tmp

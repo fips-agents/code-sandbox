@@ -1,0 +1,187 @@
+{{- if .Values.seccomp.enabled }}
+apiVersion: security-profiles-operator.x-k8s.io/v1beta1
+kind: SeccompProfile
+metadata:
+  name: {{ include "code-sandbox.fullname" . }}-sandbox
+  labels:
+    {{- include "code-sandbox.labels" . | nindent 4 }}
+spec:
+  defaultAction: SCMP_ACT_ERRNO
+  # -- Process management --
+  syscalls:
+    - action: SCMP_ACT_ALLOW
+      names:
+        - fork
+        - vfork
+        - clone
+        - clone3
+        - execve
+        - execveat
+        - wait4
+        - waitid
+        - exit
+        - exit_group
+        - kill
+        - tgkill
+    # -- File I/O --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - read
+        - pread64
+        - write
+        - writev
+        - sendfile
+        - sendfile64
+        - splice
+        - close
+        - close_range
+        - openat
+        - open
+        - lseek
+        - dup
+        - dup2
+        - dup3
+        - pipe
+        - pipe2
+        - fcntl
+    # -- Memory management --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - mmap
+        - mprotect
+        - munmap
+        - mremap
+        - brk
+        - madvise
+    # -- Filesystem metadata --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - stat
+        - fstat
+        - lstat
+        - newfstatat
+        - statx
+        - access
+        - faccessat
+        - faccessat2
+        - readlink
+        - readlinkat
+        - getcwd
+        - getdents64
+        - rename
+        - renameat2
+        - mkdir
+        - mkdirat
+        - rmdir
+        - unlink
+        - unlinkat
+        - chmod
+        - fchmod
+        - fchmodat
+    # -- Signal handling --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - rt_sigaction
+        - rt_sigprocmask
+        - rt_sigreturn
+        - sigaltstack
+    # -- Timing and synchronization --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - futex
+        - set_tid_address
+        - set_robust_list
+        - clock_gettime
+        - clock_getres
+        - clock_nanosleep
+        - nanosleep
+        - gettimeofday
+    # -- Process info --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - getpid
+        - getppid
+        - getpgrp
+        - gettid
+        - getuid
+        - getgid
+        - geteuid
+        - getegid
+        - getgroups
+        - setresuid
+        - setresgid
+        - prctl
+        - prlimit64
+        - uname
+        - arch_prctl
+        - sysinfo
+        - getrandom
+    # -- Event/poll --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - poll
+        - ppoll
+        - select
+        - pselect6
+        - epoll_create1
+        - epoll_ctl
+        - epoll_wait
+        - epoll_pwait
+        - eventfd2
+        - timerfd_create
+        - timerfd_settime
+        - timerfd_gettime
+    # -- Network (required by uvicorn) --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - socket
+        - bind
+        - listen
+        - accept
+        - accept4
+        - connect
+        - sendto
+        - recvfrom
+        - sendmsg
+        - recvmsg
+        - socketpair
+        - setsockopt
+        - getsockopt
+        - getsockname
+        - getpeername
+    # -- Async I/O --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - io_uring_setup
+        - io_uring_enter
+        - io_uring_register
+    # -- Misc --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - ioctl
+        - sched_getaffinity
+        - sched_yield
+        - getrlimit
+        - rseq
+    # -- Explicitly blocked (dangerous) --
+    - action: SCMP_ACT_ERRNO
+      names:
+        - ptrace
+        - process_vm_readv
+        - process_vm_writev
+        - init_module
+        - finit_module
+        - delete_module
+        - mount
+        - umount2
+        - pivot_root
+        - chroot
+        - bpf
+        - unshare
+        - setns
+        - reboot
+        - kexec_load
+        - kexec_file_load
+        - swapon
+        - swapoff
+{{- end }}

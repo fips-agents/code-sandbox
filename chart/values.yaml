@@ -17,6 +17,9 @@ resources:
 
 seccomp:
   enabled: false
+  # Override to use a pre-existing SeccompProfile instead of chart-managed.
+  # Leave empty to use the chart-generated profile name.
+  profileName: ""
 
 networkPolicy:
   enabled: true
