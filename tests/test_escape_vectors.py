@@ -877,3 +877,21 @@ class TestProcessEscape:
         assert any("builtins" in v for v in violations), (
             f"codecs.builtins not blocked: {violations}"
         )
+
+    @pytest.mark.escape_vector
+    def test_blocked_call_aliasing(self):
+        """Aliasing a blocked call (myopen = open) must be caught."""
+        code = "myopen = open\nmyopen('/etc/passwd')"
+        violations = validate_code(code)
+        assert any("open" in v for v in violations), (
+            f"open alias not blocked: {violations}"
+        )
+
+    @pytest.mark.escape_vector
+    def test_blocked_call_reference_in_list(self):
+        """Indirect call via list: [open][0](path) must be caught."""
+        code = "fns = [open]\nfns[0]('/etc/passwd')"
+        violations = validate_code(code)
+        assert any("open" in v for v in violations), (
+            f"open reference in list not blocked: {violations}"
+        )

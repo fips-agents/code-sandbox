@@ -367,6 +367,15 @@ class _GuardrailVisitor(ast.NodeVisitor):
                 f"is not allowed"
             )
 
+        # Block bare references to blocked call names (not just calls).
+        # Prevents aliasing: myopen = open; myopen(path) bypasses
+        # visit_Call which only checks the call-site name.
+        if node.id in _BLOCKED_CALLS:
+            self.violations.append(
+                f"Line {node.lineno}: reference to '{node.id}' "
+                f"is not allowed"
+            )
+
         self.generic_visit(node)
 
     # ------------------------------------------------------------------
