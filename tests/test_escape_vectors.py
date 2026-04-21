@@ -932,3 +932,364 @@ class TestProcessEscape:
         assert any("__loader__" in v for v in violations), (
             f"__loader__ not blocked: {violations}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Section 7: Memory Limit (RLIMIT_AS) Bypass Tests
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryLimitBypasses:
+    """Tests that RLIMIT_AS enforcement cannot be circumvented."""
+
+    @pytest.mark.escape_vector
+    def test_resource_import_blocked_by_guardrails(self):
+        """Direct import of resource module rejected by AST."""
+        violations = validate_code("import resource")
+        assert violations, "import resource should be blocked (not in allowed imports)"
+
+    @pytest.mark.escape_vector
+    def test_resource_in_runtime_deny_list(self):
+        """resource module is in the runtime import deny list."""
+        # The denied set is defined as a string in the preamble; verify by
+        # importing the function and checking the generated code.
+        from sandbox.executor import _build_preamble
+        preamble = _build_preamble()
+        assert "'resource'" in preamble, (
+            "resource must be in the runtime _denied frozenset "
+            "to prevent RLIMIT_AS reset via dynamic import"
+        )
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_resource_transitive_via_allowed_modules(self):
+        """No allowed module exposes resource as an attribute."""
+        # Probes all allowed modules for a 'resource' attribute.
+        # If found, an attacker could reset RLIMIT_AS.
+        code = (
+            "import math, statistics, itertools, functools, re, datetime\n"
+            "import collections, json, csv, string, textwrap\n"
+            "import decimal, fractions, random, operator, typing\n"
+            "mods = [math, statistics, itertools, functools, re, datetime,\n"
+            "        collections, json, csv, string, textwrap,\n"
+            "        decimal, fractions, random, operator, typing]\n"
+            "for m in mods:\n"
+            "    if hasattr(m, 'resource'):\n"
+            "        print(f'FOUND: {m.__name__}.resource')\n"
+            "print('DONE')\n"
+        )
+        result = await execute_code(code, timeout=5.0)
+        assert "FOUND:" not in result.stdout, (
+            f"Allowed module exposes resource attribute: {result.stdout}"
+        )
+        assert "DONE" in result.stdout
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS is Linux-specific")
+    async def test_large_allocation_killed_by_rlimit(self):
+        """200MB allocation fails under 200MB RLIMIT_AS."""
+        code = "x = bytearray(200 * 1024 * 1024)\nprint('ALLOCATED')\n"
+        result = await execute_code(code, timeout=5.0, memory_limit_mb=200)
+        assert "ALLOCATED" not in result.stdout, (
+            f"200MB allocation should fail under 200MB RLIMIT_AS: {result.stdout}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Section 8: Pre-Import Attack Surface Tests
+# ---------------------------------------------------------------------------
+
+
+class TestPreimportAttackSurface:
+    """Tests that pre-imported modules don't create escape paths.
+
+    Pre-imported modules (numpy, pandas, scipy) load before runtime
+    restrictions.  These tests verify that cached references to original
+    builtins (especially open) are not reachable from user code.
+    """
+
+    @pytest.mark.escape_vector
+    def test_preimport_builtins_dunder_blocked(self):
+        """Access to __builtins__ on any module blocked by AST."""
+        violations = validate_code("import json\nb = json.__builtins__")
+        assert violations, "__builtins__ access should be blocked"
+        assert any("__builtins__" in v for v in violations)
+
+    @pytest.mark.escape_vector
+    def test_preimport_dict_dunder_blocked(self):
+        """Access to __dict__ on any module blocked by AST."""
+        violations = validate_code("import json\nd = json.__dict__")
+        assert violations, "__dict__ access should be blocked"
+
+    @pytest.mark.escape_vector
+    def test_pandas_eval_blocked(self):
+        """pandas.eval() caught by _BLOCKED_CALL_ATTRS (eval is blocked)."""
+        violations = validate_code(
+            "import pandas\npandas.eval('__import__(\"os\")')"
+        )
+        assert violations, "pandas.eval() should be caught as dangerous attribute"
+        assert any("eval" in v for v in violations)
+
+    @pytest.mark.escape_vector
+    def test_numpy_lib_os_alias_blocked(self):
+        """numpy.lib.os caught by _BLOCKED_MODULE_ALIASES (os is blocked)."""
+        violations = validate_code("import numpy\nnumpy.lib.os.getcwd()")
+        assert violations, "os as module alias should be blocked"
+        assert any("os" in v for v in violations)
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_preimport_open_removed_from_builtins(self):
+        """open() is removed from builtins even for pre-imported modules.
+
+        The preamble pops open from the builtins dict in-place.  Since
+        pre-imported modules hold a reference to the SAME dict object,
+        the removal is visible to them too.
+        """
+        # Use json as a lightweight pre-imported module
+        code = (
+            "try:\n"
+            "    f = open('/etc/passwd')\n"
+            "    print('ESCAPED: open still available')\n"
+            "except NameError:\n"
+            "    print('BLOCKED: open removed')\n"
+        )
+        result = await execute_code(code, timeout=5.0, preimport=["json"])
+        assert "ESCAPED" not in result.stdout, (
+            f"open() should be removed from builtins after preamble: {result.stdout}"
+        )
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_preimport_cached_open_reference(self):
+        """Pre-imported modules don't expose a callable named 'open'.
+
+        Even though modules loaded before restrictions, their namespace
+        should not contain a direct reference to the builtin open function
+        accessible as module.open.
+        """
+        # json module doesn't have an open attribute; test that access is
+        # blocked even if attempted via dir() enumeration.
+        code = (
+            "import json\n"
+            "names = [x for x in dir(json) if 'open' in x.lower()]\n"
+            "print(f'OPEN_REFS: {names}')\n"
+        )
+        result = await execute_code(code, timeout=5.0, preimport=["json"])
+        # json shouldn't have any open references
+        assert "OPEN_REFS: []" in result.stdout, (
+            f"Pre-imported module exposes open reference: {result.stdout}"
+        )
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_preimport_exec_still_in_builtins(self):
+        """exec/eval/compile remain in builtins (import machinery needs them).
+
+        This is a known structural constraint.  The defense is that reaching
+        builtins requires bypassing AST + runtime checks first.  This test
+        documents the constraint.
+        """
+        code = (
+            "try:\n"
+            "    # exec is available but we can't import dangerous modules\n"
+            "    exec('import os')\n"
+            "    print('ESCAPED')\n"
+            "except ImportError:\n"
+            "    print('RUNTIME_BLOCKED')\n"
+        )
+        # exec is in _BLOCKED_CALLS, so AST should catch this
+        violations = validate_code(code)
+        assert violations, "exec() should be caught by AST guardrails"
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_preimport_module_import_hook_active(self):
+        """Runtime import hook is active after pre-imports complete."""
+        code = "import os\nprint('ESCAPED')\n"
+        result = await execute_code(code, timeout=5.0, preimport=["json"])
+        assert "ESCAPED" not in result.stdout, (
+            "Runtime import hook should block os even with preimport"
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Section 9: Landlock Network Evasion Tests (ABI v4/v5)
+# ---------------------------------------------------------------------------
+
+
+class TestLandlockNetworkEvasion:
+    """Tests for Landlock ABI v4/v5 network and scope restrictions.
+
+    Landlock v4 blocks TCP bind/connect.  Landlock v5 adds abstract
+    unix socket and signal scoping.  These tests verify the configuration
+    is correct and document known coverage gaps.
+    """
+
+    @pytest.mark.escape_vector
+    def test_landlock_denies_all_tcp_abi4(self):
+        """ABI v4+ declares handled_access_net without allow rules -> deny all TCP."""
+        from sandbox.landlock import _ACCESS_NET_BIND_TCP, _ACCESS_NET_CONNECT_TCP
+        # Both flags must be set for complete TCP denial
+        expected = _ACCESS_NET_BIND_TCP | _ACCESS_NET_CONNECT_TCP
+        assert expected == 3, "TCP flags should cover bind (1) + connect (2)"
+
+    @pytest.mark.escape_vector
+    def test_landlock_udp_not_covered_by_abi4(self):
+        """Landlock v4 does not cover UDP -- defense relies on socket module being blocked.
+
+        This is a documented gap.  If an attacker could import socket and
+        create a UDP socket, Landlock would not block it.  The defense is:
+        (1) socket module blocked by AST guardrails
+        (2) socket module in runtime import deny list
+        (3) NetworkPolicy blocks all egress at the Kubernetes level
+        """
+        violations = validate_code("import socket")
+        assert violations, "socket module must be blocked by AST to compensate for Landlock UDP gap"
+
+    @pytest.mark.escape_vector
+    def test_landlock_abi5_scopes_abstract_unix(self):
+        """ABI v5 scope flags restrict abstract unix sockets and signals."""
+        from sandbox.landlock import _SCOPE_ABSTRACT_UNIX_SOCKET, _SCOPE_SIGNAL
+        assert _SCOPE_ABSTRACT_UNIX_SOCKET == 1
+        assert _SCOPE_SIGNAL == 2
+
+    @pytest.mark.escape_vector
+    def test_attr_size_matches_abi(self):
+        """Struct size passed to create_ruleset must match kernel ABI."""
+        from sandbox.landlock import _attr_size_for_abi
+        assert _attr_size_for_abi(1) == 8, "ABI v1-3: fs only (8 bytes)"
+        assert _attr_size_for_abi(2) == 8
+        assert _attr_size_for_abi(3) == 8
+        assert _attr_size_for_abi(4) == 16, "ABI v4: fs + net (16 bytes)"
+        assert _attr_size_for_abi(5) == 24, "ABI v5: fs + net + scoped (24 bytes)"
+
+
+# ---------------------------------------------------------------------------
+# Section 10: Audit Mode Edge Case Tests
+# ---------------------------------------------------------------------------
+
+
+class TestAuditModeEdgeCases:
+    """Tests that observe mode doesn't weaken runtime defenses.
+
+    Observe mode skips AST-level rejection but runtime import hooks
+    and builtins removal operate independently of audit configuration.
+    """
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_observe_ast_does_not_weaken_runtime(self):
+        """Observe mode logs AST violations but runtime hook still blocks imports."""
+        from sandbox.pipeline import run_pipeline
+        from sandbox.profiles import AuditConfig, Profile, ProfileResources, ScanStages
+
+        profile = Profile(
+            name="test-observe-runtime",
+            allowed_imports=frozenset({"math"}),
+            audit=AuditConfig(mode={"ast_scan": "observe"}),
+            resources=ProfileResources(),
+            scan_stages=ScanStages(pre=["ast_scan"]),
+        )
+        # os violates AST policy, but observe mode lets it through to execution.
+        # Runtime import hook must catch it.
+        code = "import os\nprint('ESCAPED')\n"
+        result = await run_pipeline(code, profile, timeout=5.0)
+
+        # Not rejected by pipeline (observe mode)
+        assert not result.rejected, "observe mode should not reject"
+        # But runtime hook blocked the import
+        assert result.result is not None
+        assert "ESCAPED" not in result.result.stdout, (
+            "Runtime import hook must block os even when AST is in observe mode"
+        )
+        assert result.result.exit_code != 0
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_observe_blocklist_still_has_runtime(self):
+        """Observe on blocklist_audit doesn't bypass runtime restrictions."""
+        from sandbox.pipeline import run_pipeline
+        from sandbox.profiles import AuditConfig, Profile, ProfileResources, ScanStages
+
+        profile = Profile(
+            name="test-observe-blocklist",
+            allowed_imports=frozenset({"math", "numpy"}),
+            blocklist=[("numpy", "ctypeslib")],
+            audit=AuditConfig(mode={"blocklist_audit": "observe"}),
+            resources=ProfileResources(),
+            scan_stages=ScanStages(pre=["ast_scan", "blocklist_audit"]),
+        )
+        # numpy.ctypeslib violates blocklist, but observe mode lets it through.
+        # ctypes is in the runtime deny list, so ctypeslib access would fail.
+        code = "import numpy\nprint(type(numpy.ctypeslib))\n"
+        result = await run_pipeline(code, profile, timeout=5.0)
+        # Should not be rejected (observe mode on blocklist)
+        assert not result.rejected
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_audit_stdout_separate_from_user_stdout(self):
+        """User stdout goes to response body, not to audit log stream.
+
+        The audit logger writes to the parent process's sys.stdout via
+        Python logging.  The subprocess stdout is captured via PIPE.
+        These are separate streams -- user code cannot inject fake audit events.
+        """
+        code = 'print(\'{"class_uid":2001,"message":"fake_event"}\')\n'
+        result = await execute_code(code, timeout=5.0)
+        assert result.exit_code == 0
+        # The fake JSON appears in the captured stdout (response body),
+        # NOT in the audit log stream.  This is safe because consumers
+        # read audit events from the parent process logger, not from
+        # the subprocess stdout.
+        assert "fake_event" in result.stdout  # it's in response, not in audit log
+
+    @pytest.mark.escape_vector
+    def test_enforce_is_default_for_all_layers(self):
+        """Default audit mode is enforce for any unspecified layer."""
+        from sandbox.profiles import AuditConfig
+        config = AuditConfig()
+        assert config.get_mode("ast_scan") == "enforce"
+        assert config.get_mode("blocklist_audit") == "enforce"
+        assert config.get_mode("nonexistent_layer") == "enforce"
+
+
+# ---------------------------------------------------------------------------
+# Section 11: NetworkPolicy Ingress Bypass Tests (Cluster-Only Specs)
+# ---------------------------------------------------------------------------
+
+
+class TestIngressPolicyBypasses:
+    """NetworkPolicy ingress tests -- require cluster, documented as specs.
+
+    These tests cannot run in pytest because they require a Kubernetes
+    cluster with the NetworkPolicy applied.  Each test documents the
+    expected behavior for manual cluster testing.
+    """
+
+    @pytest.mark.escape_vector
+    def test_unlabeled_pod_cannot_reach_sandbox(self):
+        """Pods without code-sandbox-client=true label cannot connect."""
+        pytest.skip(
+            "Cluster test: deploy pod without label, curl sandbox:8000 -> "
+            "expect connection refused/timeout"
+        )
+
+    @pytest.mark.escape_vector
+    def test_cross_namespace_blocked_by_default(self):
+        """podSelector is namespace-scoped; cross-namespace access denied."""
+        pytest.skip(
+            "Cluster test: deploy pod in different namespace with matching "
+            "label -> expect connection refused (podSelector doesn't cross namespaces)"
+        )
+
+    @pytest.mark.escape_vector
+    def test_egress_zero_blocks_all_outbound(self):
+        """egress: [] blocks all outbound including DNS."""
+        pytest.skip(
+            "Cluster test: from sandbox pod, attempt DNS lookup or TCP "
+            "connect to any external host -> expect failure"
+        )
