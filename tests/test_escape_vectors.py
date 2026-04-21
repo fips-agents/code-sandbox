@@ -895,3 +895,30 @@ class TestProcessEscape:
         assert any("open" in v for v in violations), (
             f"open reference in list not blocked: {violations}"
         )
+
+    @pytest.mark.escape_vector
+    def test_print_self_builtins_blocked(self):
+        """print.__self__ exposes builtins module — __self__ must be blocked."""
+        code = "b = print.__self__\nb.open('/etc/passwd')"
+        violations = validate_code(code)
+        assert any("__self__" in v for v in violations), (
+            f"__self__ not blocked: {violations}"
+        )
+
+    @pytest.mark.escape_vector
+    def test_codecs_module_blocked(self):
+        """json.codecs reaches codecs module — must be blocked."""
+        code = "import json\nf = json.codecs.open('/etc/passwd')"
+        violations = validate_code(code)
+        assert any("codecs" in v for v in violations), (
+            f"codecs not blocked: {violations}"
+        )
+
+    @pytest.mark.escape_vector
+    def test_open_as_attribute_blocked(self):
+        """x.open() must be blocked regardless of what x is."""
+        code = "x.open('/etc/passwd')"
+        violations = validate_code(code)
+        assert any("open" in v for v in violations), (
+            f"open as attribute not blocked: {violations}"
+        )

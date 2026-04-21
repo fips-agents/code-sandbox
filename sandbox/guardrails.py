@@ -60,6 +60,14 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
     }
 )
 
+# Dangerous function names blocked as attributes on ANY object.
+# Prevents x.open(), x.exec(), etc. regardless of what x is.
+# These exist on multiple module objects (builtins, codecs, io, etc.)
+# and would bypass the bare-name _BLOCKED_CALLS check.
+_BLOCKED_CALL_ATTRS: frozenset[str] = frozenset(
+    {"open", "exec", "eval", "compile", "system", "popen"}
+)
+
 # Top-level module names whose *any* attribute access is blocked.
 _BLOCKED_MODULES: frozenset[str] = frozenset(
     {"subprocess", "socket", "importlib", "signal"}
@@ -109,7 +117,8 @@ _BLOCKED_DUNDERS: frozenset[str] = frozenset(
      "__class__", "__bases__", "__mro__",  # class hierarchy traversal
      "__dict__", "__code__", "__closure__",  # namespace / code introspection
      "__name__",  # prevents __name__ spoof for runtime caller check bypass
-     "__getattribute__", "__getattr__"}  # universal attribute access primitives
+     "__getattribute__", "__getattr__",  # universal attribute access primitives
+     "__self__"}  # builtin_function.__self__ exposes the builtins module
 )
 
 # Frame, generator, coroutine, and traceback attributes that expose
@@ -141,6 +150,8 @@ _BLOCKED_MODULE_ALIASES: frozenset[str] = frozenset(
         "shutil", "mmap", "pty",
         # builtins module references (e.g. enum.bltns, codecs.builtins)
         "builtins", "bltns",
+        # stdlib modules with file-opening or dangerous capabilities
+        "codecs", "io", "pathlib", "tempfile",
     }
 )
 
@@ -218,7 +229,7 @@ _FORMAT_ATTR_RE: re.Pattern[str] = re.compile(
              "__traceback__", "__import__",
              "__class__", "__bases__", "__mro__",
              "__dict__", "__code__", "__closure__", "__name__",
-             "__getattribute__", "__getattr__",
+             "__getattribute__", "__getattr__", "__self__",
              "f_globals", "f_locals", "f_builtins", "f_code",
              "gi_frame", "gi_code", "cr_frame", "cr_code",
              "ag_frame", "ag_code", "tb_frame"}
@@ -396,6 +407,13 @@ class _GuardrailVisitor(ast.NodeVisitor):
             self.violations.append(
                 f"Line {node.lineno}: access to '{attr}' attribute is not "
                 f"allowed (frame/generator introspection)"
+            )
+
+        # Block dangerous function names as attributes (e.g. codecs.open).
+        if attr in _BLOCKED_CALL_ATTRS:
+            self.violations.append(
+                f"Line {node.lineno}: access to '{attr}' attribute is not "
+                f"allowed (dangerous function)"
             )
 
         # Block private module references (e.g. random._os → os module).

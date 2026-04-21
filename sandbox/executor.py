@@ -62,6 +62,11 @@ def _build_preamble() -> str:
         "                raise ImportError(f\"import of '{name}' blocked by sandbox\")\n"  # noqa: Q003
         "        return _orig(name, gl, lo, fromlist, level)\n"
         "    _d['__import__'] = _rimp\n"
+        "    # Remove dangerous builtins so they can't be reached via any\n"
+        "    # object graph traversal (defense-in-depth catch-all).\n"
+        "    # exec/eval/compile must stay — import machinery uses them.\n"
+        "    for _name in ('open', 'breakpoint', 'input'):\n"
+        "        _d.pop(_name, None)\n"
         "    del _sys\n"
         "__sandbox_setup__()\n"
         "del __sandbox_setup__\n"
