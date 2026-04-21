@@ -859,3 +859,21 @@ class TestProcessEscape:
         assert any("__getattr__" in v for v in violations), (
             f"__getattr__ not blocked: {violations}"
         )
+
+    @pytest.mark.escape_vector
+    def test_transitive_builtins_via_enum_bltns(self):
+        """re.enum.bltns reaches builtins — bltns must be blocked."""
+        code = 'import re\nx = re.enum.bltns'
+        violations = validate_code(code)
+        assert any("bltns" in v for v in violations), (
+            f"enum.bltns not blocked: {violations}"
+        )
+
+    @pytest.mark.escape_vector
+    def test_transitive_builtins_via_codecs(self):
+        """json.codecs.builtins reaches builtins — must be blocked."""
+        code = 'import json\nx = json.codecs.builtins'
+        violations = validate_code(code)
+        assert any("builtins" in v for v in violations), (
+            f"codecs.builtins not blocked: {violations}"
+        )

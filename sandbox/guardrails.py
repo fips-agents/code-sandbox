@@ -139,6 +139,8 @@ _BLOCKED_MODULE_ALIASES: frozenset[str] = frozenset(
         "os", "sys", "subprocess", "socket", "signal",
         "ctypes", "multiprocessing", "pickle", "marshal",
         "shutil", "mmap", "pty",
+        # builtins module references (e.g. enum.bltns, codecs.builtins)
+        "builtins", "bltns",
     }
 )
 
