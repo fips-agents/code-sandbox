@@ -62,7 +62,7 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
 
 # Top-level module names whose *any* attribute access is blocked.
 _BLOCKED_MODULES: frozenset[str] = frozenset(
-    {"subprocess", "socket", "importlib"}
+    {"subprocess", "socket", "importlib", "signal"}
 )
 
 # Specific (module, attr) pairs that are blocked.
@@ -70,6 +70,35 @@ _BLOCKED_MODULE_ATTRS: frozenset[tuple[str, str]] = frozenset(
     {
         ("os", "system"),
         ("os", "popen"),
+        ("os", "kill"),
+        ("os", "killpg"),
+        ("os", "getppid"),
+        ("os", "getpid"),
+        ("os", "getpgid"),
+        ("os", "setpgid"),
+        ("os", "setsid"),
+        ("os", "abort"),
+        ("os", "fork"),
+        ("os", "forkpty"),
+        ("os", "execl"),
+        ("os", "execle"),
+        ("os", "execlp"),
+        ("os", "execlpe"),
+        ("os", "execv"),
+        ("os", "execve"),
+        ("os", "execvp"),
+        ("os", "execvpe"),
+        ("os", "spawnl"),
+        ("os", "spawnle"),
+        ("os", "spawnlp"),
+        ("os", "spawnlpe"),
+        ("os", "spawnv"),
+        ("os", "spawnve"),
+        ("os", "spawnvp"),
+        ("os", "spawnvpe"),
+        ("os", "posix_spawn"),
+        ("os", "posix_spawnp"),
+        ("os", "_exit"),
     }
 )
 

@@ -774,8 +774,7 @@ class TestProcessEscape:
     """Tests for process-level escapes (signals to parent, PID info)."""
 
     @pytest.mark.escape_vector
-    @pytest.mark.asyncio
-    async def test_signal_parent_process(self):
+    def test_signal_parent_process(self):
         """Chains globals() bypass with SIGTERM to parent (FastAPI server)."""
         code = textwrap.dedent("""\
             g = globals()
@@ -792,11 +791,53 @@ class TestProcessEscape:
                 print('SIGNAL_BLOCKED:', e)
         """)
         violations = validate_code(code)
-        if violations:
-            pytest.skip("Guardrail caught this (good)")
-        # DO NOT actually execute this -- it would kill our test runner.
-        # The fact that it passes guardrails is the vulnerability.
-        pytest.fail(
-            "GUARDRAIL BYPASS: signal-to-parent payload passed "
-            "validate_code(); would kill the FastAPI server if executed"
+        # The chain to obtain os/signal is caught (globals, __builtins__,
+        # __import__).  The aliased names (os_mod, signal_mod) won't match
+        # _BLOCKED_MODULE_ATTRS — that's a known structural limit defended
+        # at runtime.  Focused tests below verify os.kill/os.getppid directly.
+        assert len(violations) >= 3, (
+            f"Expected multiple violations for signal-to-parent chain, "
+            f"got {len(violations)}: {violations}"
         )
+
+    @pytest.mark.escape_vector
+    def test_os_kill_blocked(self):
+        """os.kill() must be blocked even if os module is somehow accessible."""
+        code = "os.kill(1, 9)"
+        violations = validate_code(code)
+        assert any("os.kill" in v for v in violations), f"os.kill() not blocked: {violations}"
+
+    @pytest.mark.escape_vector
+    def test_os_getppid_blocked(self):
+        """os.getppid() must be blocked — reveals parent PID for targeting."""
+        code = "os.getppid()"
+        violations = validate_code(code)
+        assert any("os.getppid" in v for v in violations), f"os.getppid() not blocked: {violations}"
+
+    @pytest.mark.escape_vector
+    def test_os_getpid_blocked(self):
+        """os.getpid() must be blocked — useful in escape chains."""
+        code = "os.getpid()"
+        violations = validate_code(code)
+        assert any("os.getpid" in v for v in violations), f"os.getpid() not blocked: {violations}"
+
+    @pytest.mark.escape_vector
+    def test_os_fork_blocked(self):
+        """os.fork() must be blocked — could spawn uncontrolled processes."""
+        code = "os.fork()"
+        violations = validate_code(code)
+        assert any("os.fork" in v for v in violations), f"os.fork() not blocked: {violations}"
+
+    @pytest.mark.escape_vector
+    def test_os_abort_blocked(self):
+        """os.abort() must be blocked — kills process immediately."""
+        code = "os.abort()"
+        violations = validate_code(code)
+        assert any("os.abort" in v for v in violations), f"os.abort() not blocked: {violations}"
+
+    @pytest.mark.escape_vector
+    def test_signal_module_blocked(self):
+        """signal module should be entirely blocked."""
+        code = "signal.raise_signal(9)"
+        violations = validate_code(code)
+        assert any("signal" in v for v in violations), f"signal module not blocked: {violations}"
