@@ -73,7 +73,7 @@ def _build_preamble(*, preimport: list[str] | None = None) -> str:
         "        'http', 'urllib', 'xmlrpc', 'ftplib', 'smtplib',\n"
         "        'webbrowser', 'antigravity',\n"
         "        'pickle', 'marshal', 'shelve',\n"
-        "        'code', 'codeop',\n"
+        "        'code', 'codeop', 'resource',\n"
         "    })\n"
         "    # Purge the most critical module reference: random._os → os.\n"
         "    # Other references (statistics.sys, etc.) are caught by AST.\n"
