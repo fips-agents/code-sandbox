@@ -1,9 +1,9 @@
 """Optional Landlock LSM filesystem restriction for the sandbox.
 
-Applies kernel-level filesystem access rules when available (Linux 5.13+,
-enabled by default on RHEL 9.6+ / OCP 4.18+).  Degrades gracefully on
-older kernels, non-Linux platforms, or when the Landlock LSM is not in
-the kernel's boot list.
+Applies kernel-level filesystem and network access rules when available
+(Linux 5.13+, enabled by default on RHEL 9.6+ / OCP 4.18+).  Degrades
+gracefully on older kernels, non-Linux platforms, or when the Landlock
+LSM is not in the kernel's boot list.
 
 Landlock rules are inherited by child processes, so applying them to the
 FastAPI app automatically restricts the ``python3 -I`` subprocess that
@@ -14,6 +14,18 @@ OpenShift, ``restricted-v2`` SCC sets ``allowPrivilegeEscalation: false``
 which causes CRI-O to set ``no_new_privs`` automatically.  We also call
 ``prctl(PR_SET_NO_NEW_PRIVS)`` ourselves for standalone (non-OpenShift)
 usage.
+
+ABI version matrix:
+  v1 — filesystem restrictions (Linux 5.13)
+  v2 — REFER right for cross-directory rename/link (Linux 5.19)
+  v3 — TRUNCATE right (Linux 6.2)
+  v4 — TCP bind/connect restrictions (Linux 6.7)
+  v5 — Abstract Unix socket and signal scope restrictions (Linux 6.10)
+
+The kernel ``create_ruleset`` syscall uses the ``size`` parameter to
+determine how much of ``struct landlock_ruleset_attr`` to read.  We pass
+an ABI-appropriate size so older kernels are not handed fields they do not
+understand.
 
 Usage::
 
@@ -90,6 +102,14 @@ _ACCESS_FS_REFER = 1 << 13
 # ABI v3+
 _ACCESS_FS_TRUNCATE = 1 << 14
 
+# Network access rights (ABI v4+)
+_ACCESS_NET_BIND_TCP = 1 << 0
+_ACCESS_NET_CONNECT_TCP = 1 << 1
+
+# Scope flags (ABI v5+)
+_SCOPE_ABSTRACT_UNIX_SOCKET = 1 << 0
+_SCOPE_SIGNAL = 1 << 1
+
 # Rule type
 _LANDLOCK_RULE_PATH_BENEATH = 1
 
@@ -131,11 +151,38 @@ _ALL_ACCESS_FS_V1 = (
 
 
 class _LandlockRulesetAttr(ctypes.Structure):
-    """``struct landlock_ruleset_attr`` — declares handled access rights."""
+    """``struct landlock_ruleset_attr`` — declares handled access rights.
+
+    The full v5 struct is always declared here.  However, the ``size``
+    argument passed to ``landlock_create_ruleset`` is computed based on the
+    kernel's reported ABI version so older kernels only read the fields they
+    understand (see ``_attr_size_for_abi``).
+
+    Field layout (offsets are stable across ABI versions):
+      bytes  0-7:  handled_access_fs  (ABI v1+)
+      bytes  8-15: handled_access_net (ABI v4+)
+      bytes 16-23: scoped             (ABI v5+)
+    """
 
     _fields_ = [
         ("handled_access_fs", ctypes.c_uint64),
+        ("handled_access_net", ctypes.c_uint64),  # ABI v4+
+        ("scoped", ctypes.c_uint64),               # ABI v5+
     ]
+
+
+def _attr_size_for_abi(abi: int) -> int:
+    """Return the ``size`` argument for ``landlock_create_ruleset`` for *abi*.
+
+    The kernel validates that ``size`` does not exceed what it knows.  Passing
+    the full 24-byte v5 struct to a v1 kernel would result in EINVAL, so we
+    tell the kernel only as many bytes as the ABI version introduced.
+    """
+    if abi >= 5:
+        return 24  # fs (8) + net (8) + scoped (8)
+    if abi >= 4:
+        return 16  # fs (8) + net (8)
+    return 8       # fs (8) — ABI v1-v3
 
 
 class _LandlockPathBeneathAttr(ctypes.Structure):
@@ -274,6 +321,8 @@ def apply_sandbox_landlock(
     read_only_paths:
         Filesystem paths to allow read + execute access.  Defaults to
         ``DEFAULT_READ_ONLY_PATHS`` (Python runtime, system libs, app).
+        Additional paths can also be injected at runtime via the
+        ``SANDBOX_LANDLOCK_EXTRA_RO`` environment variable (colon-separated).
     read_write_paths:
         Filesystem paths to allow full read/write access.  Defaults to
         ``DEFAULT_READ_WRITE_PATHS`` (``/tmp`` only).
@@ -281,10 +330,24 @@ def apply_sandbox_landlock(
     Returns
     -------
     LandlockStatus:
-        Whether Landlock was applied, the ABI version, and details.
+        Whether Landlock was applied, the ABI version, and details about
+        filesystem rules, network restrictions, and scope flags applied.
+        ``rules_applied`` entries use the following prefixes:
+
+        - ``ro:<path>`` — read-only filesystem rule
+        - ``rw:<path>`` — read-write filesystem rule
+        - ``net:deny-all-tcp`` — TCP bind+connect blocked (ABI v4+)
+        - ``scope:<flags>`` — signal/unix-socket scoping (ABI v5+)
     """
-    ro_paths = read_only_paths if read_only_paths is not None else DEFAULT_READ_ONLY_PATHS
+    ro_paths = list(
+        read_only_paths if read_only_paths is not None else DEFAULT_READ_ONLY_PATHS
+    )
     rw_paths = read_write_paths if read_write_paths is not None else DEFAULT_READ_WRITE_PATHS
+
+    # Support extra read-only paths injected at runtime (colon-separated).
+    extra_ro = os.environ.get("SANDBOX_LANDLOCK_EXTRA_RO", "")
+    if extra_ro:
+        ro_paths = ro_paths + [p for p in extra_ro.split(":") if p]
 
     # -- Pre-checks --
 
@@ -315,19 +378,35 @@ def apply_sandbox_landlock(
 
     # -- Determine handled access rights based on ABI --
 
-    handled = _ALL_ACCESS_FS_V1
+    handled_fs = _ALL_ACCESS_FS_V1
     if abi >= 2:
-        handled |= _ACCESS_FS_REFER
+        handled_fs |= _ACCESS_FS_REFER
     if abi >= 3:
-        handled |= _ACCESS_FS_TRUNCATE
+        handled_fs |= _ACCESS_FS_TRUNCATE
+
+    # Declaring handled_access_net without adding any allow-rules denies all TCP.
+    handled_net = 0
+    if abi >= 4:
+        handled_net = _ACCESS_NET_BIND_TCP | _ACCESS_NET_CONNECT_TCP
+
+    # Scope flags restrict abstract Unix sockets and signals to within the
+    # sandbox.  These are set directly in the ruleset attr, not via rules.
+    scoped = 0
+    if abi >= 5:
+        scoped = _SCOPE_ABSTRACT_UNIX_SOCKET | _SCOPE_SIGNAL
 
     # -- Create ruleset --
 
-    attr = _LandlockRulesetAttr(handled_access_fs=handled)
+    attr = _LandlockRulesetAttr(
+        handled_access_fs=handled_fs,
+        handled_access_net=handled_net,
+        scoped=scoped,
+    )
+    attr_size = _attr_size_for_abi(abi)
     ruleset_fd = libc.syscall(
         sys_create,
         ctypes.byref(attr),
-        ctypes.c_size_t(ctypes.sizeof(attr)),
+        ctypes.c_size_t(attr_size),
         ctypes.c_uint32(0),
     )
     if ruleset_fd < 0:
@@ -351,6 +430,18 @@ def apply_sandbox_landlock(
             if _add_path_rule(libc, sys_add_rule, ruleset_fd, path, _READ_WRITE):
                 if os.path.exists(path):
                     rules_applied.append(f"rw:{path}")
+
+        # Record network and scope restrictions (these are attribute-level, not
+        # per-rule, so they're added here after path rules are done).
+        if handled_net:
+            rules_applied.append("net:deny-all-tcp")
+        if scoped:
+            scope_names = []
+            if scoped & _SCOPE_ABSTRACT_UNIX_SOCKET:
+                scope_names.append("abstract-unix")
+            if scoped & _SCOPE_SIGNAL:
+                scope_names.append("signal")
+            rules_applied.append(f"scope:{'+'.join(scope_names)}")
 
         # -- Set no_new_privs (required for unprivileged Landlock) --
         # On OpenShift, this is already set by CRI-O via the restricted-v2
@@ -377,7 +468,8 @@ def apply_sandbox_landlock(
         os.close(ruleset_fd)
 
     logger.info(
-        "Landlock applied: %d rules (%s)",
+        "Landlock applied: ABI v%d, %d rules (%s)",
+        abi,
         len(rules_applied),
         ", ".join(rules_applied),
     )

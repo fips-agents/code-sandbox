@@ -7,11 +7,16 @@ from unittest.mock import patch
 import pytest
 
 from sandbox.landlock import (
+    _ACCESS_NET_BIND_TCP,
+    _ACCESS_NET_CONNECT_TCP,
     _READ_ONLY,
     _READ_WRITE,
+    _SCOPE_ABSTRACT_UNIX_SOCKET,
+    _SCOPE_SIGNAL,
     DEFAULT_READ_ONLY_PATHS,
     DEFAULT_READ_WRITE_PATHS,
     LandlockStatus,
+    _attr_size_for_abi,
     _LandlockPathBeneathAttr,
     _LandlockRulesetAttr,
     apply_sandbox_landlock,
@@ -49,10 +54,10 @@ class TestLandlockStatus:
 
 class TestStructures:
     def test_ruleset_attr_size(self):
-        # struct landlock_ruleset_attr has one u64 field = 8 bytes
+        # struct landlock_ruleset_attr: u64 (fs) + u64 (net) + u64 (scoped) = 24 bytes
         import ctypes
 
-        assert ctypes.sizeof(_LandlockRulesetAttr) == 8
+        assert ctypes.sizeof(_LandlockRulesetAttr) == 24
 
     def test_path_beneath_attr_size(self):
         # struct landlock_path_beneath_attr: u64 + s32 = 12 bytes (packed)
@@ -100,6 +105,64 @@ class TestAccessConstants:
 
 
 # ---------------------------------------------------------------------------
+# Network constants (ABI v4+)
+# ---------------------------------------------------------------------------
+
+
+class TestNetworkConstants:
+    def test_net_bind_tcp(self):
+        assert _ACCESS_NET_BIND_TCP == 1
+
+    def test_net_connect_tcp(self):
+        assert _ACCESS_NET_CONNECT_TCP == 2
+
+    def test_net_constants_are_distinct_bits(self):
+        assert _ACCESS_NET_BIND_TCP & _ACCESS_NET_CONNECT_TCP == 0
+
+
+# ---------------------------------------------------------------------------
+# Scope constants (ABI v5+)
+# ---------------------------------------------------------------------------
+
+
+class TestScopeConstants:
+    def test_scope_abstract_unix(self):
+        assert _SCOPE_ABSTRACT_UNIX_SOCKET == 1
+
+    def test_scope_signal(self):
+        assert _SCOPE_SIGNAL == 2
+
+    def test_scope_constants_are_distinct_bits(self):
+        assert _SCOPE_ABSTRACT_UNIX_SOCKET & _SCOPE_SIGNAL == 0
+
+
+# ---------------------------------------------------------------------------
+# ABI-based attr size helper
+# ---------------------------------------------------------------------------
+
+
+class TestAttrSizeForAbi:
+    def test_abi_v1_size(self):
+        assert _attr_size_for_abi(1) == 8
+
+    def test_abi_v2_size(self):
+        assert _attr_size_for_abi(2) == 8
+
+    def test_abi_v3_size(self):
+        assert _attr_size_for_abi(3) == 8
+
+    def test_abi_v4_size(self):
+        assert _attr_size_for_abi(4) == 16
+
+    def test_abi_v5_size(self):
+        assert _attr_size_for_abi(5) == 24
+
+    def test_abi_future_size(self):
+        # Future ABI versions should still return the largest known size.
+        assert _attr_size_for_abi(99) == 24
+
+
+# ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
 
@@ -141,6 +204,23 @@ class TestGracefulDegradation:
                 read_write_paths=["/custom/rw"],
             )
             assert status.applied is False
+
+    def test_extra_ro_paths_from_env(self):
+        """SANDBOX_LANDLOCK_EXTRA_RO is parsed even when Landlock cannot apply."""
+        with patch("sandbox.landlock.sys") as mock_sys:
+            mock_sys.platform = "darwin"
+            with patch.dict(os.environ, {"SANDBOX_LANDLOCK_EXTRA_RO": "/data:/models"}):
+                status = apply_sandbox_landlock()
+                # Landlock cannot apply on darwin, but the call must not raise.
+                assert status.applied is False
+
+    def test_extra_ro_empty_env_is_harmless(self):
+        """An empty SANDBOX_LANDLOCK_EXTRA_RO does not alter the path list."""
+        with patch("sandbox.landlock.sys") as mock_sys:
+            mock_sys.platform = "darwin"
+            with patch.dict(os.environ, {"SANDBOX_LANDLOCK_EXTRA_RO": ""}):
+                status = apply_sandbox_landlock()
+                assert status.applied is False
 
     @pytest.mark.skipif(
         sys.platform != "linux", reason="Landlock only available on Linux"

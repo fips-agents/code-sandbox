@@ -34,7 +34,11 @@ if os.environ.get("SANDBOX_SKIP_LANDLOCK") == "1":
 else:
     _landlock_status = apply_sandbox_landlock()
 if _landlock_status.applied:
-    logger.info("Landlock active (ABI v%d)", _landlock_status.abi_version)
+    logger.info(
+        "Landlock active: ABI v%d — %s",
+        _landlock_status.abi_version,
+        ", ".join(_landlock_status.rules_applied),
+    )
 elif _landlock_status.reason:
     logger.info("Landlock not applied: %s", _landlock_status.reason)
 
