@@ -22,9 +22,18 @@ history, and industry practice). Every production system — E2B, AWS Lambda,
 Google Cloud Run — uses OS-level isolation. Our AST guardrails are valuable
 as defense-in-depth but the real enforcement must come from Landlock/seccomp.
 
+## Foundational
+
+### 1. #11 — Formalize FIPS 140-3 compliance validation
+CI FIPS test job on RHEL 9 FIPS node, crypto algorithm inventory, deployment
+guide section. No code changes to the sandbox — testing and documentation
+gap. Should run first (or in parallel with #15–#16) because FIPS compliance
+is a platform property that all other work builds on. If we harden the
+sandbox but break FIPS mode, we've built on sand.
+
 ## Critical — fix before CTF (#13–#16)
 
-### 1. #15 — Convert runtime import deny to allowlist
+### 2. #15 — Convert runtime import deny to allowlist
 **Structural fix** that closes the entire class of "blocked by AST but not
 runtime" vulnerabilities. Change `_denied` frozenset to `_allowed` frozenset
 matching the AST import allowlist. The caller check already exempts non-main
@@ -32,19 +41,19 @@ callers, so stdlib internal imports still work — only the set being checked
 changes. Closes the ForwardRef path and every future eval-in-different-context
 path.
 
-### 2. #14 — Runtime-patch operator.attrgetter for dunder rejection
+### 3. #14 — Runtime-patch operator.attrgetter for dunder rejection
 Monkey-patch `operator.attrgetter` and `operator.methodcaller` in the
 preamble to reject dunder patterns at runtime. The AST check only catches
 literal string arguments; dynamic `chr()` construction is invisible to it.
 Preamble wraps these functions to check for `__*__` patterns before calling
 the originals.
 
-### 3. #13 — Block typing.ForwardRef._evaluate + io.FileIO
+### 4. #13 — Block typing.ForwardRef._evaluate + io.FileIO
 Secondary defense-in-depth for the informed attacker's chain. Add `_evaluate`
 and `FileIO` to `_BLOCKED_CALL_ATTRS`. Redundant once #15 lands but
 defense-in-depth.
 
-### 4. #16 — Tighten subprocess Landlock to exclude /opt/app-root
+### 5. #16 — Tighten subprocess Landlock to exclude /opt/app-root
 **Architectural improvement.** The subprocess should apply its own stricter
 Landlock ruleset on top of the inherited one — no `/opt/app-root`, no `/etc`.
 Even if all Python-level defenses are bypassed, the subprocess can't read
@@ -53,12 +62,6 @@ can restrict further but not relax. This makes the OS layer the true security
 boundary, matching industry practice.
 
 ### After fixes: re-run both attackers to verify
-
-## High priority
-
-### 5. #11 — Formalize FIPS 140-3 compliance validation
-CI FIPS test job, crypto algorithm inventory, deployment guide section.
-No code changes to the sandbox itself — testing and documentation gap.
 
 ### 6. #1 — CTF challenge (start date TBD)
 Blocked on #13–#16. Once hardening is verified by re-running the AI red
