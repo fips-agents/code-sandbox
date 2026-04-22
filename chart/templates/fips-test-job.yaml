@@ -1,0 +1,178 @@
+{{- if .Values.fipsValidation.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "code-sandbox.fullname" . }}-fips-test
+  labels:
+    {{- include "code-sandbox.labels" . | nindent 4 }}
+  annotations:
+    # Allow re-running via helm upgrade without name collision.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "code-sandbox.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: fips-test
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import sys, json
+
+              results = {"passed": 0, "failed": 0, "checks": []}
+
+              def check(name, fn):
+                  try:
+                      ok, detail = fn()
+                      results["checks"].append({"name": name, "pass": ok, "detail": detail})
+                      if ok:
+                          results["passed"] += 1
+                      else:
+                          results["failed"] += 1
+                      status = "PASS" if ok else "FAIL"
+                      print(f"[{status}] {name}: {detail}")
+                  except Exception as e:
+                      results["checks"].append({"name": name, "pass": False, "detail": str(e)})
+                      results["failed"] += 1
+                      print(f"[FAIL] {name}: {e}")
+
+              # 1. Kernel FIPS mode
+              def check_kernel_fips():
+                  try:
+                      with open("/proc/sys/crypto/fips_enabled") as f:
+                          val = f.read().strip()
+                      return val == "1", f"fips_enabled={val}"
+                  except FileNotFoundError:
+                      return False, "/proc/sys/crypto/fips_enabled not found"
+
+              check("kernel-fips-enabled", check_kernel_fips)
+
+              # 2. Hash algorithm availability
+              import hashlib
+
+              EXPECT_BLOCKED = {"md5", "blake2b"}
+              EXPECT_AVAILABLE = {"sha1", "sha256", "sha384", "sha512", "sha3_256"}
+
+              def make_hash_check(alg, should_block):
+                  def fn():
+                      try:
+                          hashlib.new(alg, usedforsecurity=True)
+                          if should_block:
+                              return False, f"{alg} should be BLOCKED but succeeded"
+                          return True, f"{alg} available (expected)"
+                      except ValueError:
+                          if should_block:
+                              return True, f"{alg} blocked (expected)"
+                          return False, f"{alg} unexpectedly blocked"
+                  return fn
+
+              for alg in sorted(EXPECT_BLOCKED):
+                  check(f"hash-{alg}-blocked", make_hash_check(alg, True))
+              for alg in sorted(EXPECT_AVAILABLE):
+                  check(f"hash-{alg}-available", make_hash_check(alg, False))
+
+              # 3. Blocked hashes available with usedforsecurity=False
+              def make_nonsec_check(alg):
+                  def fn():
+                      try:
+                          hashlib.new(alg, usedforsecurity=False)
+                          return True, f"{alg} available with usedforsecurity=False"
+                      except ValueError:
+                          return False, f"{alg} blocked even with usedforsecurity=False"
+                  return fn
+
+              for alg in sorted(EXPECT_BLOCKED):
+                  check(f"hash-{alg}-nonsecurity", make_nonsec_check(alg))
+
+              # 4. TLS configuration
+              import ssl
+
+              def check_tls_ciphers():
+                  ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                  ciphers = ctx.get_ciphers()
+                  count = len(ciphers)
+                  all_aead = all(
+                      "GCM" in c["name"] or "CCM" in c["name"] or "CHACHA20" in c["name"]
+                      for c in ciphers
+                  )
+                  if not all_aead:
+                      non_aead = [c["name"] for c in ciphers
+                                  if not ("GCM" in c["name"] or "CCM" in c["name"] or "CHACHA20" in c["name"])]
+                      return False, f"{count} ciphers, non-AEAD found: {non_aead}"
+                  return True, f"{count} ciphers, all AEAD"
+
+              check("tls-ciphers-aead", check_tls_ciphers)
+
+              def check_tls_min():
+                  ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                  return ctx.minimum_version >= ssl.TLSVersion.TLSv1_2, \
+                      f"minimum={ctx.minimum_version.name}"
+
+              check("tls-minimum-1.2", check_tls_min)
+
+              def check_tls11_rejected():
+                  ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                  try:
+                      ctx.maximum_version = ssl.TLSVersion.TLSv1_1
+                      # If setting succeeded, check if any ciphers remain
+                      if len(ctx.get_ciphers()) == 0:
+                          return True, "TLS 1.1 has no ciphers (effectively rejected)"
+                      return False, "TLS 1.1 accepted with ciphers available"
+                  except (ssl.SSLError, ValueError):
+                      return True, "TLS 1.1 rejected by SSLContext"
+
+              check("tls-1.1-rejected", check_tls11_rejected)
+
+              # 5. OpenSSL version
+              def check_openssl():
+                  ver = ssl.OPENSSL_VERSION
+                  return "3." in ver, ver
+
+              check("openssl-version", check_openssl)
+
+              # 6. os.urandom (FIPS DRBG)
+              import os
+
+              def check_urandom():
+                  data = os.urandom(32)
+                  return len(data) == 32, f"os.urandom returned {len(data)} bytes"
+
+              check("urandom-fips-drbg", check_urandom)
+
+              # Summary
+              print(f"\n{'='*50}")
+              print(f"FIPS Validation: {results['passed']} passed, {results['failed']} failed")
+              print(f"{'='*50}")
+
+              sys.exit(0 if results["failed"] == 0 else 1)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Mi
+{{- end }}
