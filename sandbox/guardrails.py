@@ -68,7 +68,8 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
 # and would bypass the bare-name _BLOCKED_CALLS check.
 _BLOCKED_CALL_ATTRS: frozenset[str] = frozenset(
     {"open", "exec", "eval", "compile", "system", "popen", "get_data",
-     "_evaluate", "FileIO", "ForwardRef"}
+     "_evaluate", "FileIO", "ForwardRef",
+     "get_field", "vformat"}  # string.Formatter object graph traversal
 )
 
 # Top-level module names whose *any* attribute access is blocked.
@@ -159,6 +160,8 @@ _BLOCKED_MODULE_ALIASES: frozenset[str] = frozenset(
         "codecs", "io", "pathlib", "tempfile",
         # typing.types exposes FunctionType, CodeType, ModuleType
         "types",
+        # typing.contextlib / typing.warnings leak module references
+        "contextlib", "warnings",
         # typing.ForwardRef._evaluate calls eval() — block attribute access
         "_evaluate",
     }
