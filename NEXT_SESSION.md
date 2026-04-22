@@ -62,60 +62,30 @@ before writing.
 
 ---
 
-## Priority 1 — FIPS 140-3 compliance validation (#11)
+## Priority 1 — Run frontier models through CTF eval harness
 
-Half-session effort. No code changes expected — testing and documentation.
-
-1. Run test suite on FIPS node (`oc exec` pytest on fips-rhoai)
-2. Crypto algorithm inventory (md5, sha1, sha256 under FIPS mode)
-3. TLS cipher validation (AEAD-only expected)
-4. Write deployment guide section
-5. CI job spec for automated FIPS testing
-
-Already known: UBI respects kernel fips=1, subprocess inherits, 21 AEAD
-ciphers available, seccomp/Landlock unaffected by FIPS.
-
----
-
-## Priority 2 — Improve CTF eval framework
-
-### 2a. Fix agent loop response propagation
-The agent returns empty content when it hits `StepResult.continue_()` and
-the model's final response has no text. The eval framework sees "PYTHON_ESCAPE"
-based on earlier messages but the final content is empty. Fix: the agent should
-accumulate a summary of all tool call results across iterations, or the server
-should return the full conversation history.
-
-### 2b. Fix timeout issues
-GPT-OSS 20B and Ministral 14B timeout on standard prompt (iterating heavily).
-Options: increase route timeout further, or cap iterations more aggressively
-in the eval config.
-
-### 2c. Run frontier models through the same harness
 The Claude runs used a different harness (direct curl with attacker runner
 docs). For a fair comparison, run Claude through the CTF agent with the same
 standard/hints prompts. Requires an OpenAI-compatible proxy for the Anthropic
-API, or use a different frontier model available via OpenAI-compatible endpoint.
+API (multi-provider LLM adapter sidecar — design filed as
+fips-agents/agent-template#76). Quick standalone adapter can unblock this
+in the meantime. Course material updates tracked in fips-agents/examples#9.
 
 ---
 
-## Priority 3 — Remaining hardening gaps
+## Priority 2 — Remaining hardening gaps
 
-### 3a. Seccomp stacking in subprocess preamble
+### 2a. Seccomp stacking in subprocess preamble
 Investigate: can `seccomp(SECCOMP_SET_MODE_FILTER)` be called from the
 preamble via ctypes to block `socket` syscalls in the subprocess only?
 Would close the UDP gap that Landlock v4 doesn't cover.
 
-### 3b. Metadata leakage via stat/access
+### 2b. Metadata leakage via stat/access
 Landlock does not restrict stat. The informed attacker confirmed: `stat
 flag.txt` shows size=36, mode=0644. Accept as low risk or investigate
 mitigation options.
 
-### 3c. Block typing.get_type_hints at AST level
-Add `get_type_hints` to `_BLOCKED_CALL_ATTRS`. Quick one-liner. Defense-
-in-depth — won't stop determined attackers but raises the bar.
-
-### 3d. Separate-pod sandbox (#18)
+### 2c. Separate-pod sandbox (#18)
 Explore moving the sandbox to its own pod for per-pod seccomp isolation.
 Filed as fips-agents/code-sandbox#18.
 
@@ -149,10 +119,25 @@ Private repo: `fips-agents/code-sandbox-research`
 
 ## Completed (2026-04-22)
 
+**FIPS 140-3 validation (#11):**
+- Validated on fips-rhoai cluster (RHEL 9, kernel fips=1, OpenSSL 3.5.1)
+- 21 AEAD-only TLS ciphers, TLS 1.2+, md5/blake2b blocked as expected
+- All sandbox features work under FIPS (numpy, pandas, scipy, random, stdlib)
+- All 6 isolation layers unaffected
+- Added Helm FIPS validation Job (`fipsValidation.enabled`)
+- Closes #11
+
 **Hardening:**
 - Fixed `_inner` slot leak — closure-based wrappers replace class+slots
 - Blocked `typing.types`, `typing.contextlib`, `typing.warnings` in AST
 - Blocked `string.Formatter.get_field` and `vformat` in AST
+- Blocked `get_type_hints` in both `_BLOCKED_CALLS` (bare name) and `_BLOCKED_CALL_ATTRS` (attribute access); review caught the `from typing import get_type_hints` gap in `_BLOCKED_CALLS` (P3c)
+- 303 tests, all passing
+
+**CTF eval framework (sandbox-ctf-agent repo):**
+- 2a: CTFServer subclass injects conversation history in sync responses; eval analyzes all messages
+- 2b: Added haproxy route timeout annotation (600s), eval `--timeout` CLI flag
+- 2c: Multi-provider LLM adapter sidecar pattern chosen over in-process SDK approach; filed fips-agents/agent-template#76. Quick standalone adapter can unblock CTF eval comparison in the meantime. Also filed fips-agents/examples#9 for course material updates.
 
 **Red team (frontier):**
 - Informed attacker v3 (Sonnet): 116 attempts, Python escape, Landlock held
