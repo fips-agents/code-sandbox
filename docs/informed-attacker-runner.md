@@ -54,7 +54,8 @@ globals, locals, vars
 **`_BLOCKED_CALL_ATTRS`** — blocked as attribute access on ANY object (`x.open()`,
 `x.exec()`, etc.):
 ```
-open, exec, eval, compile, system, popen, get_data
+open, exec, eval, compile, system, popen, get_data,
+_evaluate, FileIO, ForwardRef
 ```
 
 **`_BLOCKED_MODULES`** — any attribute access on these top-level names is blocked:
@@ -106,7 +107,8 @@ os, sys, subprocess, socket, signal,
 ctypes, multiprocessing, pickle, marshal,
 shutil, mmap, pty,
 builtins, bltns,
-codecs, io, pathlib, tempfile
+codecs, io, pathlib, tempfile,
+_evaluate
 ```
 
 **`_DYNAMIC_ATTR_CALLS`** — operator module functions that perform dynamic attribute access:
@@ -130,23 +132,23 @@ math, statistics, itertools, functools, re, datetime, collections,
 json, csv, string, textwrap, decimal, fractions, random, operator, typing
 ```
 
-### Layer 2 — Runtime Import Deny (executor.py preamble)
+### Layer 2 — Runtime Import Allowlist (executor.py preamble)
 
-A custom `__import__` hook is installed before user code runs. It blocks imports of these
-modules when called from `__main__` context (the caller check uses
-`(gl or {}).get('__name__', '__main__')`):
+A custom `__import__` hook is installed before user code runs. It uses an **allowlist**, not
+a denylist — only modules in the profile's allowed imports set can be imported from
+`__main__` context. The caller check is unchanged: `(gl or {}).get('__name__', '__main__')`,
+so stdlib internal imports (where `__name__` is the importing module, not `__main__`) still
+work normally.
 
+**Allowed imports (minimal profile):**
 ```
-os, sys, builtins,
-subprocess, socket, ctypes, multiprocessing,
-pty, shutil, signal, mmap,
-http, urllib, xmlrpc, ftplib, smtplib,
-webbrowser, antigravity,
-pickle, marshal, shelve,
-code, codeop, resource
+math, statistics, itertools, functools, re, datetime, collections,
+json, csv, string, textwrap, decimal, fractions, random, operator, typing
 ```
 
-The deny list uses the top-level module name (`name.split('.')[0]`), so `import os.path` is
+Any module **not** in this list is blocked at runtime, including `io`, `struct`, `array`,
+`hashlib`, `os`, `sys`, `subprocess`, `pathlib`, `importlib`, and everything else. The
+allowlist uses the top-level module name (`name.split('.')[0]`), so `import os.path` is
 also blocked.
 
 ### Layer 2b — Runtime Builtins Removal
@@ -162,6 +164,18 @@ open, breakpoint, input
 `random._os` is explicitly deleted (`delattr(_random, '_os')` after `import random`). This
 is the only module where a generic purge would be too destructive (e.g. `collections._sys`
 is needed by `namedtuple`).
+
+### Layer 2d — Operator Dunder Patch
+
+`operator.attrgetter` and `operator.methodcaller` are monkey-patched in the preamble with
+wrapper classes. Each wrapper checks every positional argument: the string is split on `.`
+for dotted attribute paths, and each segment is tested against the regex `^__\w+__$`. If any
+segment matches a dunder pattern, a `RuntimeError("dunder attribute access blocked by
+sandbox")` is raised.
+
+This runs at runtime, so `chr()`-based dynamic construction of dunder strings is caught.
+The AST check on `attrgetter`/`methodcaller` only catches literal string arguments; this
+runtime patch catches dynamically constructed ones too.
 
 ### Layer 3 — Landlock LSM (landlock.py)
 
@@ -180,6 +194,23 @@ denies ALL TCP bind and connect. This is applied even if no `socket` module is r
 restricting abstract Unix sockets and signals to within the sandbox.
 
 **Key implication:** UDP is NOT blocked by Landlock v4 network rules. Only TCP is denied.
+
+### Layer 3b — Subprocess Landlock (executor.py)
+
+The parent Landlock (Layer 3) still applies, but the execution subprocess applies its own
+**tighter** Landlock ruleset after pre-imports but before the import hook is installed.
+
+**Subprocess filesystem rules:**
+- Read-only: `/usr`, `/lib`, `/lib64`, `/proc/self`
+- Read-write: `/tmp`
+- **NOT allowed:** `/opt/app-root` (application code, `flag.txt`), `/etc` (configs, secrets)
+
+Even if ALL Python-level defenses are bypassed, the subprocess cannot read
+`/opt/app-root/flag.txt` — the kernel denies the open with EACCES.
+
+Landlock is additive: the subprocess restrictions intersect with the parent's rules, so the
+subprocess can never access MORE than the parent allows. The subprocess rules only further
+narrow what is permitted.
 
 ### Layer 4 — Seccomp Profile (chart/templates/seccomp-profile.yaml)
 
@@ -252,6 +283,17 @@ These specific techniques were found and fixed; they will not work:
 
 6. **`random._os`** — explicitly deleted at runtime by the preamble.
 
+7. **`typing.ForwardRef._evaluate()` → `eval()` → `import io` → `io.FileIO`** —
+   `_evaluate` and `FileIO` now in `_BLOCKED_CALL_ATTRS`; runtime allowlist blocks `io`
+   import; subprocess Landlock blocks `/opt/app-root` read.
+
+8. **`operator.attrgetter(chr(95)*2 + 'class' + chr(95)*2)`** — `operator.attrgetter` is
+   now monkey-patched at runtime to reject dunder patterns in arguments.
+
+9. **Any module not in the allowlist imported via eval-in-different-context** — runtime
+   import hook now uses an allowlist instead of a denylist; `io`, `struct`, `pathlib`, etc.
+   are all blocked.
+
 ---
 
 ## Attack Surface Analysis and Strategy Hints
@@ -273,15 +315,12 @@ what module contexts can user code reach? Can a class body, decorator, or metacl
 and executed with `exec()` in a custom globals dict where `__name__` is set to something
 other than `__main__`?
 
-**C. Modules not in the deny list and not in allowed imports (blocked only by AST).**
-These modules are blocked at AST (not in allowed imports) but NOT in the runtime deny list:
-```
-struct, array, hashlib, hmac, enum, abc, contextlib, dataclasses,
-inspect, ast, dis, tokenize, traceback, warnings, weakref, copy, pprint,
-_thread, threading, pathlib, io, codecs, importlib
-```
-If you can bypass the AST import check, these modules load without hitting the runtime deny.
-`importlib` is particularly interesting — it provides alternative import mechanisms.
+**C. The AST-to-runtime gap is closed.**
+With the runtime allowlist, every module not in the allowed imports set is blocked at BOTH
+the AST layer and the runtime layer. There is no longer a class of modules blocked only by
+AST. The remaining attack surface on the import path reduces to: can you execute code in a
+context where `__name__` is not `__main__`? (covered by section B). Or: can you reach the
+builtins dict to call `exec`/`eval`/`compile` directly? (covered by section A).
 
 **D. Seccomp allows network syscalls; Landlock only blocks TCP.**
 `socket`, `connect`, `sendto`, `recvfrom` are all in the seccomp allowlist (required for

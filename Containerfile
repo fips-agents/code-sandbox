@@ -17,8 +17,7 @@ RUN if [ -s /tmp/profile-requirements.txt ]; then \
         pip install --no-cache-dir -r /tmp/profile-requirements.txt; \
     fi
 
-COPY --chmod=644 sandbox/__init__.py sandbox/app.py sandbox/executor.py sandbox/guardrails.py \
-     sandbox/landlock.py sandbox/pipeline.py sandbox/profiles.py sandbox/
+COPY --chmod=644 sandbox/*.py sandbox/
 
 COPY --chmod=644 sandbox/profiles/ sandbox/profiles/
 
