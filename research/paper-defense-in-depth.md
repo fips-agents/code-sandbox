@@ -201,10 +201,32 @@ in this domain.
 - Kernel bugs in Landlock itself would be a full escape
 - Evaluation limited to Claude and three small models; other frontier models not tested
 
-### 6. Conclusion
+### 6. Future Work
+#### 6.1 Multi-Language Sandbox Plugins
+- Current implementation is Python-specific (AST guardrails, runtime hooks, preamble)
+- Kernel layers (Landlock, seccomp, container hardening) are language-agnostic
+- Plugin architecture: each language implements a common interface (validate + execute)
+- Profile YAML gains a `language` field selecting the guardrail/executor pair
+- Candidate languages: Bash (restricted mode + shellcheck-style validation), Rust/Go/C (compile in tmpdir + run), Java (SecurityManager replacement + classpath restriction), JavaScript (V8 isolates or Deno permissions)
+- The two-layer Landlock pattern applies identically regardless of language — the subprocess restriction is orthogonal to what runs inside it
+- Community contribution opportunity: language plugins can be developed independently against a stable interface, with kernel enforcement shared across all
+
+#### 6.2 Additional Evaluation
+- Longer small-model sessions (50+ iterations) to determine escape threshold by model size
+- Additional frontier models: GPT-4o, Gemini 2.5, Llama 4, Mistral Large
+- Adversarial fine-tuning: can a model be fine-tuned specifically for sandbox escape?
+- Performance benchmarking: latency contribution of each defense layer
+
+#### 6.3 Kernel-Level Improvements
+- Separate seccomp profiles for parent vs. subprocess (not possible with sidecar architecture today)
+- Landlock ABI v6+ features as they arrive
+- Investigate stat/access metadata leakage mitigation
+
+### 7. Conclusion
 - Language-level Python sandboxing is defense-in-depth, not a security boundary
 - Two-layer Landlock provides practical kernel enforcement without VMs
 - AI red teaming is an effective methodology for sandbox validation
+- Multi-language extensibility is achievable by separating language-specific validation from language-agnostic kernel enforcement
 - Open-source implementation available (link to repo)
 
 ### Appendices
