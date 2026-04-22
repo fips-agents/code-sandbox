@@ -157,6 +157,8 @@ _BLOCKED_MODULE_ALIASES: frozenset[str] = frozenset(
         "builtins", "bltns",
         # stdlib modules with file-opening or dangerous capabilities
         "codecs", "io", "pathlib", "tempfile",
+        # typing.types exposes FunctionType, CodeType, ModuleType
+        "types",
         # typing.ForwardRef._evaluate calls eval() — block attribute access
         "_evaluate",
     }

@@ -185,6 +185,20 @@ async def test_methodcaller_legitimate_use():
     assert result.stdout.strip() == "hello", f"unexpected stdout: {result.stdout!r}"
 
 
+@pytest.mark.asyncio
+async def test_attrgetter_no_inner_leak():
+    """The safe attrgetter wrapper must not expose the original via _inner."""
+    result = await execute_code(
+        "import operator\n"
+        "ag = operator.attrgetter('real')\n"
+        "print(hasattr(ag, '_inner'))\n",
+    )
+    assert result.exit_code == 0, f"stderr: {result.stderr!r}"
+    assert result.stdout.strip() == "False", (
+        f"_inner attribute should not exist on wrapper; stdout: {result.stdout!r}"
+    )
+
+
 # -- Runtime import allowlist tests --
 
 

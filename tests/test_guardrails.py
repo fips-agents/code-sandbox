@@ -416,3 +416,11 @@ FORWARD_REF_CASES = [
 def test_forward_ref_evaluate_blocked(source):
     violations = _clean(source)
     assert len(violations) >= 1, f"Expected a violation for: {source!r}"
+
+
+def test_typing_types_blocked():
+    """typing.types gives access to FunctionType/CodeType — must be blocked."""
+    violations = _clean("import typing\nprint(typing.types.FunctionType)")
+    assert any("types" in v and "module reference" in v for v in violations), (
+        f"expected 'types' blocked as module reference, got: {violations}"
+    )
