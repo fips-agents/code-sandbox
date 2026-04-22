@@ -413,6 +413,50 @@ class TestEvalBypasses:
         )
 
     @pytest.mark.escape_vector
+    def test_typing_get_type_hints_blocked_by_ast(self):
+        """typing.get_type_hints must be blocked at AST level (defense-in-depth).
+
+        Even innocuous-looking calls to get_type_hints are dangerous because
+        the function calls eval() on string annotations.  Frontier models have
+        used this to smuggle arbitrary code past AST guardrails by embedding
+        payloads in type annotation strings.
+        """
+        code = textwrap.dedent("""\
+            import typing
+
+            class X:
+                a: '__import__("os").system("id")'
+
+            typing.get_type_hints(X)
+        """)
+        violations = validate_code(code)
+        assert any("get_type_hints" in v for v in violations), (
+            "GUARDRAIL BYPASS: typing.get_type_hints() not blocked by AST; "
+            "its internal eval() can execute arbitrary annotation strings"
+        )
+
+    @pytest.mark.escape_vector
+    def test_get_type_hints_direct_import_blocked(self):
+        """from typing import get_type_hints must also be blocked.
+
+        _BLOCKED_CALL_ATTRS only catches attribute access (typing.get_type_hints).
+        The bare-name form requires _BLOCKED_CALLS coverage.
+        """
+        code = textwrap.dedent("""\
+            from typing import get_type_hints
+
+            class X:
+                a: '__import__("os").system("id")'
+
+            get_type_hints(X)
+        """)
+        violations = validate_code(code)
+        assert any("get_type_hints" in v for v in violations), (
+            "GUARDRAIL BYPASS: bare get_type_hints() call not blocked; "
+            "from typing import get_type_hints evades _BLOCKED_CALL_ATTRS"
+        )
+
+    @pytest.mark.escape_vector
     @pytest.mark.asyncio
     async def test_typing_eval_env_leak(self):
         """typing.get_type_hints can leak env vars if os import succeeds."""

@@ -59,6 +59,7 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
         "getattr", "setattr", "delattr",
         "breakpoint", "input",
         "globals", "locals", "vars",  # scope introspection
+        "get_type_hints",  # typing.get_type_hints evals annotation strings
     }
 )
 
@@ -69,7 +70,8 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
 _BLOCKED_CALL_ATTRS: frozenset[str] = frozenset(
     {"open", "exec", "eval", "compile", "system", "popen", "get_data",
      "_evaluate", "FileIO", "ForwardRef",
-     "get_field", "vformat"}  # string.Formatter object graph traversal
+     "get_field", "vformat",  # string.Formatter object graph traversal
+     "get_type_hints"}  # typing.get_type_hints evals annotation strings
 )
 
 # Top-level module names whose *any* attribute access is blocked.

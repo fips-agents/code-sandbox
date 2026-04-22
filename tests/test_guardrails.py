@@ -424,3 +424,33 @@ def test_typing_types_blocked():
     assert any("types" in v and "module reference" in v for v in violations), (
         f"expected 'types' blocked as module reference, got: {violations}"
     )
+
+
+def test_typing_get_type_hints_blocked():
+    """typing.get_type_hints() evals annotation strings — must be blocked."""
+    violations = _clean("""\
+        import typing
+
+        class X:
+            a: 'int'
+
+        typing.get_type_hints(X)
+    """)
+    assert any("get_type_hints" in v for v in violations), (
+        f"expected 'get_type_hints' blocked as dangerous function, got: {violations}"
+    )
+
+
+def test_get_type_hints_bare_name_blocked():
+    """from typing import get_type_hints; get_type_hints(X) must also be blocked."""
+    violations = _clean("""\
+        from typing import get_type_hints
+
+        class X:
+            a: 'int'
+
+        get_type_hints(X)
+    """)
+    assert any("get_type_hints" in v for v in violations), (
+        f"expected bare 'get_type_hints' blocked as dangerous call, got: {violations}"
+    )
