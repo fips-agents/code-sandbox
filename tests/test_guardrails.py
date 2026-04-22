@@ -368,3 +368,51 @@ def test_default_allowed_imports_blocks_numpy():
     assert any("numpy" in v for v in violations), (
         f"expected numpy to be blocked by default allowlist, got: {violations}"
     )
+
+
+# ---------------------------------------------------------------------------
+# typing.ForwardRef._evaluate / io.FileIO — issue #13
+# ---------------------------------------------------------------------------
+
+FORWARD_REF_CASES = [
+    pytest.param(
+        """\
+        import typing
+        ref = typing.ForwardRef('int')
+        ref._evaluate(None, None, frozenset())
+        """,
+        id="ForwardRef_evaluate_call",
+    ),
+    pytest.param(
+        """\
+        import typing
+        typing.ForwardRef('int')
+        """,
+        id="ForwardRef_construction",
+    ),
+    pytest.param(
+        """\
+        ref._evaluate(localns, globalns, frozenset())
+        """,
+        id="evaluate_on_any_object",
+    ),
+    pytest.param(
+        """\
+        import typing
+        x = typing.ForwardRef._evaluate
+        """,
+        id="evaluate_attribute_access",
+    ),
+    pytest.param(
+        """\
+        io.FileIO('/etc/passwd')
+        """,
+        id="FileIO_call",
+    ),
+]
+
+
+@pytest.mark.parametrize("source", FORWARD_REF_CASES)
+def test_forward_ref_evaluate_blocked(source):
+    violations = _clean(source)
+    assert len(violations) >= 1, f"Expected a violation for: {source!r}"

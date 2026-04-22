@@ -67,7 +67,8 @@ _BLOCKED_CALLS: frozenset[str] = frozenset(
 # These exist on multiple module objects (builtins, codecs, io, etc.)
 # and would bypass the bare-name _BLOCKED_CALLS check.
 _BLOCKED_CALL_ATTRS: frozenset[str] = frozenset(
-    {"open", "exec", "eval", "compile", "system", "popen", "get_data"}
+    {"open", "exec", "eval", "compile", "system", "popen", "get_data",
+     "_evaluate", "FileIO", "ForwardRef"}
 )
 
 # Top-level module names whose *any* attribute access is blocked.
@@ -156,6 +157,8 @@ _BLOCKED_MODULE_ALIASES: frozenset[str] = frozenset(
         "builtins", "bltns",
         # stdlib modules with file-opening or dangerous capabilities
         "codecs", "io", "pathlib", "tempfile",
+        # typing.ForwardRef._evaluate calls eval() — block attribute access
+        "_evaluate",
     }
 )
 
