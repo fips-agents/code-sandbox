@@ -31,41 +31,16 @@ gap. Should run first (or in parallel with #15–#16) because FIPS compliance
 is a platform property that all other work builds on. If we harden the
 sandbox but break FIPS mode, we've built on sand.
 
-## Critical — fix before CTF (#13–#16)
+## Next up
 
-### 2. #15 — Convert runtime import deny to allowlist
-**Structural fix** that closes the entire class of "blocked by AST but not
-runtime" vulnerabilities. Change `_denied` frozenset to `_allowed` frozenset
-matching the AST import allowlist. The caller check already exempts non-main
-callers, so stdlib internal imports still work — only the set being checked
-changes. Closes the ForwardRef path and every future eval-in-different-context
-path.
+### 1. Re-run both AI red team attackers to verify fixes
+All four critical fixes (#13–#16) are now implemented. Re-run the informed
+(Sonnet) and blind (Opus) attackers against the hardened sandbox to verify
+the escape vectors are closed before announcing the CTF.
 
-### 3. #14 — Runtime-patch operator.attrgetter for dunder rejection
-Monkey-patch `operator.attrgetter` and `operator.methodcaller` in the
-preamble to reject dunder patterns at runtime. The AST check only catches
-literal string arguments; dynamic `chr()` construction is invisible to it.
-Preamble wraps these functions to check for `__*__` patterns before calling
-the originals.
-
-### 4. #13 — Block typing.ForwardRef._evaluate + io.FileIO
-Secondary defense-in-depth for the informed attacker's chain. Add `_evaluate`
-and `FileIO` to `_BLOCKED_CALL_ATTRS`. Redundant once #15 lands but
-defense-in-depth.
-
-### 5. #16 — Tighten subprocess Landlock to exclude /opt/app-root
-**Architectural improvement.** The subprocess should apply its own stricter
-Landlock ruleset on top of the inherited one — no `/opt/app-root`, no `/etc`.
-Even if all Python-level defenses are bypassed, the subprocess can't read
-application files or mounted secrets. Landlock is additive: child processes
-can restrict further but not relax. This makes the OS layer the true security
-boundary, matching industry practice.
-
-### After fixes: re-run both attackers to verify
-
-### 6. #1 — CTF challenge (start date TBD)
-Blocked on #13–#16. Once hardening is verified by re-running the AI red
-team, set the date and announce.
+### 2. #1 — CTF challenge (start date TBD)
+Blocked on red team re-verification. Once both attackers fail to escape,
+set the date and announce.
 
 ## Medium priority
 
@@ -81,7 +56,16 @@ Parameterize BASE_IMAGE in Containerfile, validate against IronBank Python
 3.11, document the swap procedure. No urgency — driven by future DoD
 deployment requirements.
 
-## Completed this session (2026-04-21)
+## Completed this session (2026-04-21, second pass)
+
+- **#13** — Block typing.ForwardRef._evaluate + io.FileIO in AST guardrails
+- **#14** — Runtime-patch operator.attrgetter/methodcaller for dunder rejection
+- **#15** — Convert runtime import deny list to allowlist (structural fix)
+- **#16** — Subprocess Landlock: drops /opt/app-root and /etc
+- Updated test_escape_vectors resource test for allowlist model
+- 22 new tests (298 total, all passing)
+
+## Completed this session (2026-04-21, first pass)
 
 - **#3** — Memory limit via RLIMIT_AS (200 MB minimal, 800 MB data-science)
 - **#4** — pandas/six pre-import compatibility
