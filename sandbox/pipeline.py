@@ -98,7 +98,12 @@ async def run_pipeline(
     # Execute.
     memory_mb = profile.resources.subprocess_memory_mb
     result = await execute_code(
-        code, timeout, memory_limit_mb=memory_mb, preimport=profile.preimport or None,
+        code,
+        timeout,
+        memory_limit_mb=memory_mb,
+        preimport=profile.preimport or None,
+        allowed_imports=profile.allowed_imports,
+        subprocess_landlock=True,
     )
 
     if result.timed_out:

@@ -949,14 +949,14 @@ class TestMemoryLimitBypasses:
         assert violations, "import resource should be blocked (not in allowed imports)"
 
     @pytest.mark.escape_vector
-    def test_resource_in_runtime_deny_list(self):
-        """resource module is in the runtime import deny list."""
-        # The denied set is defined as a string in the preamble; verify by
-        # importing the function and checking the generated code.
-        from sandbox.executor import _build_preamble
-        preamble = _build_preamble()
-        assert "'resource'" in preamble, (
-            "resource must be in the runtime _denied frozenset "
+    def test_resource_not_in_runtime_allowlist(self):
+        """resource module is NOT in the runtime import allowlist."""
+        # The runtime preamble uses an allowlist — only modules in the
+        # allowlist can be imported from __main__.  Verify that resource
+        # is excluded so attackers cannot reset RLIMIT_AS.
+        from sandbox.guardrails import _DEFAULT_ALLOWED_IMPORTS
+        assert "resource" not in _DEFAULT_ALLOWED_IMPORTS, (
+            "resource must NOT be in the runtime allowlist "
             "to prevent RLIMIT_AS reset via dynamic import"
         )
 
