@@ -371,3 +371,12 @@ async def test_landlock_blocks_opt_app_root_read():
     assert "ACCESS_DENIED" in result.stdout, (
         f"expected Landlock to block /opt/app-root read; stdout: {result.stdout!r}"
     )
+
+
+def test_landlock_preamble_has_e2big_fallback():
+    """The Landlock preamble handles E2BIG by trying smaller struct sizes."""
+    preamble = _build_landlock_preamble()
+    assert "_E2BIG" in preamble, "preamble should handle E2BIG fallback"
+    assert "24, 16, 8" in preamble or "[24,16,8]" in preamble, (
+        "preamble should try sizes 24, 16, 8"
+    )

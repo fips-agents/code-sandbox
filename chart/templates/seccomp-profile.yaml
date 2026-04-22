@@ -155,6 +155,12 @@ spec:
         - io_uring_setup
         - io_uring_enter
         - io_uring_register
+    # -- Landlock LSM (filesystem restriction in subprocess) --
+    - action: SCMP_ACT_ALLOW
+      names:
+        - landlock_create_ruleset
+        - landlock_add_rule
+        - landlock_restrict_self
     # -- Misc --
     - action: SCMP_ACT_ALLOW
       names:

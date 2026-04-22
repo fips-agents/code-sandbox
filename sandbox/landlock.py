@@ -224,9 +224,7 @@ def _get_libc() -> ctypes.CDLL | None:
     """Load libc for syscall access.  Returns None on non-Linux."""
     if sys.platform != "linux":
         return None
-    path = ctypes.util.find_library("c")
-    if path is None:
-        return None
+    path = ctypes.util.find_library("c") or "libc.so.6"
     return ctypes.CDLL(path, use_errno=True)
 
 
@@ -384,10 +382,12 @@ def apply_sandbox_landlock(
     if abi >= 3:
         handled_fs |= _ACCESS_FS_TRUNCATE
 
-    # Declaring handled_access_net without adding any allow-rules denies all TCP.
+    # The parent process (FastAPI/uvicorn) needs TCP for serving HTTP.
+    # TCP denial is enforced in the subprocess Landlock preamble instead
+    # (see executor.py _build_landlock_preamble), so the parent does NOT
+    # declare handled_access_net.  The subprocess independently declares
+    # its own TCP deny via its own Landlock ruleset.
     handled_net = 0
-    if abi >= 4:
-        handled_net = _ACCESS_NET_BIND_TCP | _ACCESS_NET_CONNECT_TCP
 
     # Scope flags restrict abstract Unix sockets and signals to within the
     # sandbox.  These are set directly in the ruleset attr, not via rules.
@@ -396,24 +396,48 @@ def apply_sandbox_landlock(
         scoped = _SCOPE_ABSTRACT_UNIX_SOCKET | _SCOPE_SIGNAL
 
     # -- Create ruleset --
+    #
+    # Try the ABI-computed size first, then fall back to smaller sizes
+    # if the kernel rejects with E2BIG.  RHEL backport kernels may
+    # report ABI v5 but only support the v4 struct layout (16 bytes).
 
-    attr = _LandlockRulesetAttr(
-        handled_access_fs=handled_fs,
-        handled_access_net=handled_net,
-        scoped=scoped,
-    )
+    _E2BIG = 7
     attr_size = _attr_size_for_abi(abi)
-    ruleset_fd = libc.syscall(
-        sys_create,
-        ctypes.byref(attr),
-        ctypes.c_size_t(attr_size),
-        ctypes.c_uint32(0),
-    )
-    if ruleset_fd < 0:
+    ruleset_fd = -1
+    for try_size in [s for s in [24, 16, 8] if s <= attr_size]:
+        # Zero out fields the kernel won't read at this size.
+        attr = _LandlockRulesetAttr(
+            handled_access_fs=handled_fs,
+            handled_access_net=handled_net if try_size >= 16 else 0,
+            scoped=scoped if try_size >= 24 else 0,
+        )
+        ruleset_fd = libc.syscall(
+            sys_create,
+            ctypes.byref(attr),
+            ctypes.c_size_t(try_size),
+            ctypes.c_uint32(0),
+        )
+        if ruleset_fd >= 0:
+            attr_size = try_size
+            # Adjust effective features for smaller struct.
+            if try_size < 24:
+                scoped = 0
+            if try_size < 16:
+                handled_net = 0
+            break
         errno = ctypes.get_errno()
+        if errno != _E2BIG:
+            # Not a size issue -- stop trying.
+            return LandlockStatus(
+                abi_version=abi,
+                reason=f"landlock_create_ruleset failed (errno={errno})",
+            )
+        logger.info("Landlock: size %d rejected (E2BIG), falling back", try_size)
+
+    if ruleset_fd < 0:
         return LandlockStatus(
             abi_version=abi,
-            reason=f"landlock_create_ruleset failed (errno={errno})",
+            reason="landlock_create_ruleset failed at all sizes",
         )
 
     # -- Add path rules --
