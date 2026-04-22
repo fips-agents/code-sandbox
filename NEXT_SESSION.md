@@ -24,18 +24,6 @@ No model has read the flag from the hardened sandbox.
 | Gemma 4 E4B | ~4B | RECON_ONLY (10 calls) | PYTHON_ESCAPE (7 calls) | No |
 | Granite 3.3 8B | 8B | RUNTIME_BYPASS (0 calls) | PYTHON_ESCAPE (3 calls) | No |
 
-**Key findings from controlled eval:**
-- With hints, ALL four models reached PYTHON_ESCAPE level (understood the
-  exploit chain conceptually). Without hints, none got past AST_BYPASS.
-- Ministral 14B iterated the most aggressively (28 tool calls) but got stuck
-  on chr() string construction details — understanding vs. execution gap.
-- GPT-OSS 20B with hints wrote the exploit as text (0 tool calls) rather than
-  executing it — understood the attack but didn't use the tool.
-- No model reached LANDLOCK_BLOCKED in the controlled eval — all hit the
-  Python-level ceiling without quite chaining the full escape.
-- In guided mode (explicit step-by-step instructions), Ministral 14B DID
-  achieve full Python escape and hit Landlock.
-
 ### Key architectural insight
 
 Language-level Python sandboxing is not a viable security boundary. Every
@@ -56,53 +44,121 @@ Landlock (parent broad, subprocess tight) is novel in this domain.
 
 ### Paper work
 
-Research notes moved to private repo `fips-agents/code-sandbox-research`.
+Research notes in private repo `fips-agents/code-sandbox-research`.
 Abstract, outline, and landscape analysis ready. Needs validation sessions
 before writing.
 
 ---
 
-## Priority 1 — Run frontier models through CTF eval harness
+## Priority 1 — Framework stabilization + 0.5.0 release
 
-The Claude runs used a different harness (direct curl with attacker runner
-docs). For a fair comparison, run Claude through the CTF agent with the same
-standard/hints prompts. Requires an OpenAI-compatible proxy for the Anthropic
-API (multi-provider LLM adapter sidecar — design filed as
-fips-agents/agent-template#76). Quick standalone adapter can unblock this
-in the meantime. Course material updates tracked in fips-agents/examples#9.
+Bug fixes and quick wins to get a clean release out.
+
+- **agent-template#72** — Fix tool call id/name missing in SSE stream (bug)
+- **agent-template#65** — Fix MCP tool result stringification (bug)
+- **agent-template#77** — UI copy-to-clipboard button (quick win, port from demo)
+- **agent-template#63** — Accept extended sampling parameters
+- **agent-template#64** — Publish fipsagents 0.5.0 to PyPI (after bugs fixed)
 
 ---
 
-## Priority 2 — Remaining hardening gaps
+## Priority 2 — Multi-provider LLM adapter (agent-template#76)
 
-### 2a. Seccomp stacking in subprocess preamble
+Unblocks both the CTF frontier eval comparison and customer installs.
+
+1. Quick standalone adapter (Anthropic only, ~100 lines) to unblock CTF eval
+2. Proper `llm-adapter` repo: FastAPI, pluggable providers, UBI base, FIPS-safe
+3. `provider` field in LLMConfig, Helm chart sidecar injection
+4. Anthropic first, Bedrock second
+5. Course material update (examples#9) after shipping
+
+---
+
+## Priority 3 — Sandbox hardening (code-sandbox)
+
+### 3a. Seccomp stacking in subprocess preamble
 Investigate: can `seccomp(SECCOMP_SET_MODE_FILTER)` be called from the
 preamble via ctypes to block `socket` syscalls in the subprocess only?
 Would close the UDP gap that Landlock v4 doesn't cover.
 
-### 2b. Metadata leakage via stat/access
+### 3b. Metadata leakage via stat/access
 Landlock does not restrict stat. The informed attacker confirmed: `stat
 flag.txt` shows size=36, mode=0644. Accept as low risk or investigate
 mitigation options.
 
-### 2c. Separate-pod sandbox (#18)
+### 3c. Separate-pod sandbox (code-sandbox#18)
 Explore moving the sandbox to its own pod for per-pod seccomp isolation.
-Filed as fips-agents/code-sandbox#18.
+
+---
+
+## Priority 4 — Agent infrastructure services (design phase)
+
+These share a common PostgreSQL substrate and need design before
+implementation. Start with RFCs, then implement incrementally.
+
+### Persistence cluster (PostgreSQL-based)
+- **agent-template#78** — Conversation persistence via PostgreSQL
+  - Subsumes #70 (pluggable persistence layer) and #71 (forking)
+  - #70 defines the interface (null, sqlite, postgres, custom backends)
+  - #78 is the PostgreSQL backend
+  - #71 adds tree-structured conversations on top
+- **agent-template#79** — pgvector + graph (Apache AGE) for self-contained RAG
+  - Shares the PostgreSQL instance from #78
+- **agent-template#81** — Tracing/observability
+  - External: OpenTelemetry + LlamaStack integration
+  - Internal fallback: structured logging + optional SQLite/Postgres trace storage
+  - MicroShift/edge: lightweight stdout-only mode
+
+### Independent services
+- **agent-template#80** — Agent identity and auth (OAuth2/OIDC)
+- **agent-template#82** — File storage and retrieval (PVC, S3, local)
+
+### Design approach
+Write one design doc covering the shared PostgreSQL substrate (#78, #79,
+#81 trace storage) to avoid designing three separate database schemas
+that need to be merged later. Auth (#80) and file storage (#82) can be
+designed independently.
+
+---
+
+## Priority 5 — CLI fixes (fips-agents-cli)
+
+Go scaffold bugs — all related to template rewriting during project creation.
+
+- **#5** — Generated README.md ships broken See Also links
+- **#6** — create gateway/ui: Go import paths not rewritten
+- **#7** — create gateway/ui: Helm templates reference template-named helpers
+- **#8** — Go import paths not updated in .go source files
+- **#9** — Helm template YAML files not updated for Go projects
+
+---
+
+## Priority 6 — Course material + demos
+
+After framework stabilizes (P1 release, P2 adapter, P4 persistence).
+
+- **examples#10** — Downstream template changes into demos and course material
+- **examples#8** — Add agent memory module to tutorial
+- **examples#9** — Update course for multi-provider LLM support (blocked by P2)
+- **examples#6** — Module 5: Test UI deploy path on cluster
+- **examples#7** — Manual UI testing after automated e2e passes
 
 ---
 
 ## Backlog
 
-### #1 — CTF challenge (start date TBD)
-Decide format. All models escape Python guardrails (with hints). None
-read the flag (Landlock holds). What does the CTF target?
+### code-sandbox
+- **#1** — CTF challenge (format TBD — depends on P2 for frontier eval)
+- **#10** — Sandbox-as-wrapper pattern (security proxy for untrusted agents)
+- **#12** — IronBank base image for STIG compliance
+- **#17** — Multi-language sandbox plugin architecture
 
-### #10 — Sandbox-as-wrapper pattern
-Security proxy for untrusted agents.
-
-### #12 — IronBank base image for STIG compliance
-
-### #17 — Multi-language sandbox plugin architecture
+### agent-template
+- **#26** — Code execution sandbox hardening with OpenShell + DefenseClaw (v2)
+- **#35** — Add /v1/responses endpoint (LlamaStack Open Responses API)
+- **#61** — MCP integration test harness
+- **#66** — Explore code-as-tool pattern using sandbox sidecar
+- **#69** — Explore Execution Ladder concept for graduated sandbox tiers
 
 ### Paper validation sessions
 Private repo: `fips-agents/code-sandbox-research`
@@ -114,6 +170,17 @@ Private repo: `fips-agents/code-sandbox-research`
 ### Clean up temporary resources
 - `code-sandbox-direct` service/route on fips-rhoai
 - `gemma-4-e4b-it` route on fips-rhoai
+
+---
+
+## Open issue summary
+
+| Repo | Open | Key issues |
+|------|------|------------|
+| agent-template | 16 | #72 #65 (bugs), #76 (adapter), #78-82 (infra services) |
+| code-sandbox | 5 | #18 (separate pod), #17 (multi-lang), #1 (CTF) |
+| examples | 5 | #10 (downstream), #8 (memory tutorial) |
+| fips-agents-cli | 7 | #5-9 (Go scaffold bugs) |
 
 ---
 
