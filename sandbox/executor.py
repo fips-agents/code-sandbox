@@ -11,6 +11,7 @@ import os
 import tempfile
 
 from sandbox.guardrails import _DEFAULT_ALLOWED_IMPORTS
+from sandbox.seccomp import build_seccomp_preamble
 
 _MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB per stream
 _TRUNCATION_NOTE = "\n[output truncated at 50 KB]"
@@ -214,6 +215,7 @@ def _build_preamble(
     allowed_imports: frozenset[str],
     preimport: list[str] | None = None,
     landlock: bool = True,
+    seccomp: bool = True,
 ) -> str:
     """Build a runtime preamble that restricts imports in the subprocess.
 
@@ -238,6 +240,9 @@ def _build_preamble(
         landlock: If True (default), include a subprocess Landlock preamble
             that drops /opt/app-root and /etc from the filesystem access.
             Inserted after pre-imports but before the import hook.
+        seccomp: If True (default), include a seccomp BPF preamble that
+            blocks all networking syscalls and io_uring in the subprocess.
+            Inserted after Landlock but before the import hook.
     """
     parts: list[str] = []
 
@@ -253,6 +258,13 @@ def _build_preamble(
     # libraries can load) but before the import hook (which blocks ctypes).
     if landlock:
         parts.append(_build_landlock_preamble())
+
+    # Subprocess seccomp: BPF filter that blocks all networking syscalls
+    # (socket, connect, bind, sendto, etc.) and io_uring.  Closes the
+    # UDP gap that Landlock v4 does not cover.  Must run after pre-imports
+    # and Landlock (both need ctypes) but before the import hook.
+    if seccomp:
+        parts.append(build_seccomp_preamble())
 
     # Build the allowlist literal for the preamble.  Sorted for
     # deterministic output in tests.
@@ -347,6 +359,7 @@ async def execute_code(
     preimport: list[str] | None = None,
     allowed_imports: frozenset[str] | None = None,
     subprocess_landlock: bool = True,
+    subprocess_seccomp: bool = True,
 ) -> ExecutionResult:
     """Execute *code* in an isolated Python subprocess and return the result.
 
@@ -364,6 +377,9 @@ async def execute_code(
         subprocess_landlock: If True (default) and *runtime_restrict* is
             True, include a Landlock preamble that drops /opt/app-root and
             /etc from the subprocess's filesystem access.
+        subprocess_seccomp: If True (default) and *runtime_restrict* is
+            True, include a seccomp BPF preamble that blocks all networking
+            syscalls and io_uring in the subprocess.
 
     Returns:
         An :class:`ExecutionResult` with captured stdout, stderr, exit code,
@@ -378,6 +394,7 @@ async def execute_code(
             allowed_imports=effective_allowed,
             preimport=preimport,
             landlock=subprocess_landlock,
+            seccomp=subprocess_seccomp,
         ) + code
     if memory_limit_mb > 0:
         code = _build_memory_preamble(memory_limit_mb) + code

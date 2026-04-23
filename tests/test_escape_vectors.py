@@ -1210,6 +1210,41 @@ class TestLandlockNetworkEvasion:
         assert _attr_size_for_abi(4) == 16, "ABI v4: fs + net (16 bytes)"
         assert _attr_size_for_abi(5) == 24, "ABI v5: fs + net + scoped (24 bytes)"
 
+    @pytest.mark.escape_vector
+    def test_seccomp_closes_udp_gap(self):
+        """Seccomp BPF blocks socket() at the kernel level, closing the UDP gap.
+
+        Landlock v4 blocks TCP but not UDP.  The seccomp BPF filter in the
+        subprocess preamble blocks ALL socket-family syscalls, so even if an
+        attacker bypasses Python-level defenses, the kernel prevents socket
+        creation.  This test verifies the preamble is present and blocks the
+        socket syscall numbers.
+        """
+        from sandbox.seccomp import (
+            BLOCKED_SYSCALLS_AARCH64,
+            BLOCKED_SYSCALLS_X86_64,
+            build_seccomp_preamble,
+        )
+        preamble = build_seccomp_preamble()
+        # Verify UDP-relevant syscalls are blocked
+        assert "socket" in BLOCKED_SYSCALLS_X86_64
+        assert "sendto" in BLOCKED_SYSCALLS_X86_64
+        assert "recvfrom" in BLOCKED_SYSCALLS_X86_64
+        assert "socket" in BLOCKED_SYSCALLS_AARCH64
+        assert "sendto" in BLOCKED_SYSCALLS_AARCH64
+        assert "recvfrom" in BLOCKED_SYSCALLS_AARCH64
+        # Preamble must be present and valid
+        assert "__seccomp_restrict__" in preamble
+
+    @pytest.mark.escape_vector
+    def test_seccomp_blocks_io_uring_bypass(self):
+        """io_uring can perform socket operations; seccomp must block it too."""
+        from sandbox.seccomp import BLOCKED_SYSCALLS_AARCH64, BLOCKED_SYSCALLS_X86_64
+        for table in (BLOCKED_SYSCALLS_X86_64, BLOCKED_SYSCALLS_AARCH64):
+            assert "io_uring_setup" in table, "io_uring_setup must be blocked"
+            assert "io_uring_enter" in table, "io_uring_enter must be blocked"
+            assert "io_uring_register" in table, "io_uring_register must be blocked"
+
 
 # ---------------------------------------------------------------------------
 # Section 10: Audit Mode Edge Case Tests

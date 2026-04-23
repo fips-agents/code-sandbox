@@ -394,3 +394,67 @@ def test_landlock_preamble_has_e2big_fallback():
     assert "24, 16, 8" in preamble or "[24,16,8]" in preamble, (
         "preamble should try sizes 24, 16, 8"
     )
+
+
+# -- Subprocess seccomp preamble tests --
+
+
+def test_seccomp_preamble_included_by_default():
+    """When seccomp=True (default), the preamble includes __seccomp_restrict__."""
+    preamble = _build_preamble(
+        allowed_imports=_DEFAULT_ALLOWED_IMPORTS, seccomp=True,
+    )
+    assert "__seccomp_restrict__" in preamble, (
+        "expected seccomp preamble when seccomp=True"
+    )
+
+
+def test_seccomp_preamble_excluded_when_disabled():
+    """When seccomp=False, the preamble omits __seccomp_restrict__."""
+    preamble = _build_preamble(
+        allowed_imports=_DEFAULT_ALLOWED_IMPORTS, seccomp=False,
+    )
+    assert "__seccomp_restrict__" not in preamble, (
+        "expected no seccomp preamble when seccomp=False"
+    )
+
+
+def test_seccomp_ordering_after_landlock_before_hook():
+    """Seccomp preamble must appear after Landlock and before the import hook."""
+    preamble = _build_preamble(
+        allowed_imports=_DEFAULT_ALLOWED_IMPORTS, landlock=True, seccomp=True,
+    )
+    ll_pos = preamble.index("__landlock_restrict__")
+    sc_pos = preamble.index("__seccomp_restrict__")
+    hook_pos = preamble.index("__sandbox_setup__")
+    assert ll_pos < sc_pos < hook_pos, (
+        "expected ordering: Landlock < seccomp < import hook"
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Seccomp requires Linux",
+)
+@pytest.mark.asyncio
+async def test_seccomp_blocks_socket_creation():
+    """On Linux, seccomp BPF prevents socket() syscall in the subprocess."""
+    permissive = frozenset({"ctypes", "math", "sys"})
+    result = await execute_code(
+        "import ctypes\n"
+        "import ctypes.util\n"
+        "_libc = ctypes.CDLL(ctypes.util.find_library('c') or 'libc.so.6', use_errno=True)\n"
+        "fd = _libc.socket(2, 1, 0)\n"
+        "if fd < 0:\n"
+        "    import ctypes\n"
+        "    print(f'BLOCKED: errno={ctypes.get_errno()}')\n"
+        "else:\n"
+        "    print(f'CREATED_SOCKET: fd={fd}')\n",
+        timeout=5.0,
+        allowed_imports=permissive,
+        subprocess_seccomp=True,
+        subprocess_landlock=True,
+    )
+    assert "BLOCKED" in result.stdout, (
+        f"expected seccomp to block socket(); stdout: {result.stdout!r}, "
+        f"stderr: {result.stderr!r}"
+    )
