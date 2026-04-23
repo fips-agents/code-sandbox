@@ -149,12 +149,6 @@ spec:
         - getsockopt
         - getsockname
         - getpeername
-    # -- Async I/O --
-    - action: SCMP_ACT_ALLOW
-      names:
-        - io_uring_setup
-        - io_uring_enter
-        - io_uring_register
     # -- Landlock LSM (filesystem restriction in subprocess) --
     - action: SCMP_ACT_ALLOW
       names:
@@ -172,6 +166,11 @@ spec:
     # -- Explicitly blocked (dangerous) --
     - action: SCMP_ACT_ERRNO
       names:
+        # io_uring: container escape vector class.  uvicorn uses epoll on
+        # RHEL 9 Python 3.11, not io_uring.  Subprocess BPF also blocks these.
+        - io_uring_setup
+        - io_uring_enter
+        - io_uring_register
         - ptrace
         - process_vm_readv
         - process_vm_writev

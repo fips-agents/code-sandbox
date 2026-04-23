@@ -1,0 +1,25 @@
+# Recommended production deployment as a standalone service.
+# Agents call the sandbox over the ClusterIP Service instead of localhost.
+#
+# Usage:
+#   helm upgrade --install code-sandbox ./chart \
+#     -f chart/values-standalone.yaml \
+#     --set image.repository=<registry>/code-sandbox \
+#     --set image.tag=<version> \
+#     --context=<cluster> -n <namespace>
+#
+# Agent pods must have label code-sandbox-client=true to reach
+# the sandbox through the NetworkPolicy.
+
+replicaCount: 2
+
+profile: minimal
+
+seccomp:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+
+route:
+  enabled: false
