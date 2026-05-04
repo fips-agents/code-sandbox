@@ -61,6 +61,21 @@ class TestSeccompConstants:
             assert "io_uring_enter" in table
             assert "io_uring_register" in table
 
+    def test_splice_blocked_on_both_architectures(self):
+        # splice() is Phase 3 of the Copy Fail exploit (CVE-2026-31431,
+        # RHSB-2026-02): the attacker uses it to map page-cache pages
+        # into an AF_ALG crypto socket.  Block on both arches.
+        assert BLOCKED_SYSCALLS_X86_64["splice"] == 275
+        assert BLOCKED_SYSCALLS_AARCH64["splice"] == 76
+
+    def test_socket_syscall_blocked_covers_af_alg(self):
+        # AF_ALG (socket family 38) is Phase 1 of the Copy Fail exploit.
+        # We don't filter by socket family in BPF; instead the entire
+        # socket() syscall is blocked, which denies AF_ALG along with
+        # every other socket family.
+        assert "socket" in BLOCKED_SYSCALLS_X86_64
+        assert "socket" in BLOCKED_SYSCALLS_AARCH64
+
 
 class TestSeccompPreamble:
     def test_preamble_is_valid_python(self):
@@ -106,3 +121,9 @@ class TestSeccompPreamble:
     def test_preamble_blocks_io_uring_numbers(self):
         preamble = build_seccomp_preamble()
         assert "425" in preamble  # io_uring_setup
+
+    def test_preamble_blocks_splice_numbers(self):
+        # CVE-2026-31431 / RHSB-2026-02: splice is Phase 3 of Copy Fail.
+        preamble = build_seccomp_preamble()
+        assert "275" in preamble  # x86_64 splice
+        assert ", 76" in preamble or " 76," in preamble  # aarch64 splice

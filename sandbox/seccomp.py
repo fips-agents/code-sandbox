@@ -2,8 +2,12 @@
 
 Builds a Python code string that, when executed inside the subprocess,
 installs a seccomp BPF filter blocking all networking syscalls (socket,
-connect, bind, sendto, etc.) and io_uring.  This closes the UDP gap
-that Landlock v4 does not cover and prevents io_uring-based bypasses.
+connect, bind, sendto, etc.), io_uring, and splice.  This closes the
+UDP gap that Landlock v4 does not cover, prevents io_uring-based
+bypasses, and removes the splice() system call used by the Copy Fail
+exploit chain (CVE-2026-31431, Red Hat Security Bulletin RHSB-2026-02).
+Blocking socket() also denies AF_ALG socket creation, which is the
+entry point of that exploit's algif_aead crypto interface attack.
 
 The filter uses SECCOMP_RET_ERRNO (EPERM) for blocked syscalls so the
 subprocess receives a clean error rather than being killed outright.
@@ -44,6 +48,11 @@ BLOCKED_SYSCALLS_X86_64 = {
     "io_uring_setup": 425,
     "io_uring_enter": 426,
     "io_uring_register": 427,
+    # splice() is the kernel primitive used in Phase 3 of the Copy Fail
+    # privilege-escalation chain (CVE-2026-31431) to map page-cache pages
+    # into an AF_ALG crypto socket.  User code never legitimately needs
+    # splice; deny it.
+    "splice": 275,
 }
 
 BLOCKED_SYSCALLS_AARCH64 = {
@@ -68,6 +77,8 @@ BLOCKED_SYSCALLS_AARCH64 = {
     "io_uring_setup": 425,
     "io_uring_enter": 426,
     "io_uring_register": 427,
+    # See x86_64 table for rationale.  splice on aarch64 is syscall 76.
+    "splice": 76,
 }
 
 PR_SET_SECCOMP = 22

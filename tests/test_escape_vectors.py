@@ -809,6 +809,77 @@ class TestNetworkEscape:
             f"stdout={result.stdout!r}"
         )
 
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    async def test_af_alg_socket_blocked(self):
+        """CVE-2026-31431 'Copy Fail' Phase 1: AF_ALG socket creation.
+
+        The Copy Fail privilege-escalation chain begins by opening an
+        AF_ALG (family 38) socket and binding the algif_aead crypto
+        algorithm.  Defense-in-depth in this sandbox:
+          1. AST guardrails reject `import socket`.
+          2. Runtime preamble denylist purges `socket`.
+          3. Subprocess seccomp BPF blocks the socket() syscall outright,
+             which denies AF_ALG along with every other socket family.
+        On non-Linux hosts the BPF layer no-ops; the import-layer defense
+        carries the test.  Reference: Red Hat RHSB-2026-02.
+        """
+        code = textwrap.dedent("""\
+            g = globals()
+            b = g['__builtins__']
+            imp = b['__import__'] if isinstance(b, dict) else b.__import__
+            sock = imp('socket')
+            try:
+                s = sock.socket(38, sock.SOCK_SEQPACKET, 0)
+                print('AF_ALG_OPEN')
+            except Exception as e:
+                print('AF_ALG_BLOCKED:', e)
+        """)
+        violations = validate_code(code)
+        if violations:
+            pytest.skip("Guardrail caught this (good)")
+        result = await execute_code(code, timeout=5.0)
+        assert "AF_ALG_OPEN" not in result.stdout, (
+            f"COPY FAIL ESCAPE: AF_ALG socket created -- exploit Phase 1 "
+            f"reachable.  stdout={result.stdout!r}"
+        )
+
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        sys.platform != "linux",
+        reason="splice() only exists on Linux",
+    )
+    async def test_splice_syscall_blocked(self):
+        """CVE-2026-31431 'Copy Fail' Phase 3: splice() to crypto socket.
+
+        Even if AF_ALG were reachable, splice() is the kernel primitive
+        used to map page-cache pages into the crypto socket for in-place
+        corruption.  The subprocess BPF filter and the container-level
+        SeccompProfile both deny splice().  Reference: RHSB-2026-02.
+        """
+        code = textwrap.dedent("""\
+            g = globals()
+            b = g['__builtins__']
+            imp = b['__import__'] if isinstance(b, dict) else b.__import__
+            os_mod = imp('os')
+            try:
+                rfd, wfd = os_mod.pipe()
+                rfd2, wfd2 = os_mod.pipe()
+                n = os_mod.splice(rfd, wfd2, 0)
+                print('SPLICE_OK', n)
+            except Exception as e:
+                print('SPLICE_BLOCKED:', e)
+        """)
+        violations = validate_code(code)
+        if violations:
+            pytest.skip("Guardrail caught this (good)")
+        result = await execute_code(code, timeout=5.0)
+        assert "SPLICE_OK" not in result.stdout, (
+            f"COPY FAIL ESCAPE: splice() succeeded -- exploit Phase 3 "
+            f"reachable.  stdout={result.stdout!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Section 6: Signal / Process Escape Tests
