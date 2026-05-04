@@ -1,0 +1,62 @@
+# CVE-2026-31431 "Copy Fail" mitigation -- ACM Governance Policy
+#
+# Source:   Red Hat Customer Portal solution 7142032
+#           https://access.redhat.com/solutions/7142032
+# Bulletin: RHSB-2026-02
+#           https://access.redhat.com/security/vulnerabilities/RHSB-2026-02
+# CVE:      CVE-2026-31431
+#           https://access.redhat.com/security/cve/cve-2026-31431
+#
+# This policy is reproduced verbatim from the Red Hat solution above and
+# is intended to be applied at the Advanced Cluster Management hub
+# cluster, NOT installed by this chart into a workload cluster.  It
+# pushes a MachineConfig that adds the kernel boot argument
+# `initcall_blacklist=algif_aead_init` to OpenShift worker nodes,
+# disabling the vulnerable algif_aead initcall.
+#
+# Default remediationAction is `inform` (matches the upstream Red Hat
+# template).  Setting it to `enforce` will reboot every targeted node.
+#
+# Apply at the ACM hub:
+#     oc apply -f chart/policies/copy-fail-mitigation-policy.yaml
+#
+# Then bind a Placement and switch to `enforce` from the ACM Governance
+# console when you are prepared for the rolling reboot.
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: policy-prevent-copy-fail-cve
+  annotations:
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+    policy.open-cluster-management.io/categories: SI System and Information Integrity
+    policy.open-cluster-management.io/controls: SI-5 Security Alerts Advisories and Directives
+    policy.open-cluster-management.io/description: This policy deploys a mitigation
+      for CVE-2026-31431 by applying an OpenShift  MachineConfig that makes an update
+      to the cluster nodes.  This update will cause the nodes to reboot.  The policy
+      is set to inform by default and can be enforced when you are prepared for the
+      nodes to be restated.
+spec:
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: prevent-copy-fail-cve
+        spec:
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: machineconfiguration.openshift.io/v1
+                kind: MachineConfig
+                metadata:
+                  labels:
+                    machineconfiguration.openshift.io/role: worker # Repeat for 'master' if needed
+                  name: 99-disable-algif-builtin
+                spec:
+                  kernelArguments:
+                    - initcall_blacklist=algif_aead_init
+          remediationAction: enforce
+          severity: high
+  remediationAction: inform
