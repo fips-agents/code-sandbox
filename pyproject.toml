@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "code-sandbox"
-version = "0.5.0"
+version = "0.5.1"
 description = "Code execution sandbox for AI agents with AST guardrails and defense-in-depth isolation"
 readme = "README.md"
 license = {text = "Apache-2.0"}

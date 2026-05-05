@@ -218,9 +218,9 @@ Default action is `SCMP_ACT_ERRNO` (deny all not listed). Allowed syscalls inclu
 
 - Process: `fork`, `vfork`, `clone`, `clone3`, `execve`, `execveat`, `wait4`, `waitid`,
   `exit`, `exit_group`, `kill`, `tgkill`
-- File I/O: `read`, `pread64`, `write`, `writev`, `sendfile`, `sendfile64`, `splice`,
+- File I/O: `read`, `pread64`, `write`, `writev`, `sendfile`, `sendfile64`,
   `close`, `close_range`, `openat`, `open`, `lseek`, `dup`, `dup2`, `dup3`, `pipe`,
-  `pipe2`, `fcntl`
+  `pipe2`, `fcntl` (`splice` is explicitly denied -- see CVE-2026-31431 below)
 - Memory: `mmap`, `mprotect`, `munmap`, `mremap`, `brk`, `madvise`
 - Filesystem metadata: `stat`, `fstat`, `lstat`, `newfstatat`, `statx`, `access`,
   `faccessat`, `faccessat2`, `readlink`, `readlinkat`, `getcwd`, `getdents64`, `rename`,
@@ -241,7 +241,9 @@ Default action is `SCMP_ACT_ERRNO` (deny all not listed). Allowed syscalls inclu
 
 Explicitly blocked: `ptrace`, `process_vm_readv`, `process_vm_writev`, `init_module`,
 `finit_module`, `delete_module`, `mount`, `umount2`, `pivot_root`, `chroot`, `bpf`,
-`unshare`, `setns`, `reboot`, `kexec_load`, `kexec_file_load`, `swapon`, `swapoff`
+`unshare`, `setns`, `reboot`, `kexec_load`, `kexec_file_load`, `swapon`, `swapoff`,
+`splice` (CVE-2026-31431 / RHSB-2026-02 "Copy Fail" -- splice is Phase 3 of the
+algif_aead privilege-escalation chain; subprocess BPF blocks it as well)
 
 **Key implication:** Network syscalls (`socket`, `connect`, `sendto`) are allowed by
 seccomp. The restriction is at Landlock (TCP only) and NetworkPolicy (egress). If you can
