@@ -355,7 +355,7 @@ async def execute_code(
     timeout: float = 10.0,
     *,
     runtime_restrict: bool = True,
-    memory_limit_mb: int = 200,
+    memory_limit_mb: int = 512,
     preimport: list[str] | None = None,
     allowed_imports: frozenset[str] | None = None,
     subprocess_landlock: bool = True,

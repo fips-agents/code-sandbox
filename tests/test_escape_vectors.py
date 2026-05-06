@@ -738,16 +738,16 @@ class TestResourceExhaustion:
         reason="RLIMIT_AS enforcement is Linux-specific",
     )
     async def test_memory_exhaustion(self):
-        """Attempt to allocate 200MB in a memory-limited sandbox."""
+        """Attempt to allocate 400MB in a memory-limited sandbox."""
         code = textwrap.dedent("""\
-            x = bytearray(200 * 1024 * 1024)
+            x = bytearray(400 * 1024 * 1024)
             print('ALLOCATED:', len(x))
         """)
         # This payload uses no blocked calls -- it is pure Python.
         # The guardrail won't catch it; the OS/container limits must.
         result = await execute_code(code, timeout=5.0)
         assert "ALLOCATED:" not in result.stdout or result.exit_code != 0, (
-            f"RESOURCE EXHAUSTION: 200MB allocation succeeded: "
+            f"RESOURCE EXHAUSTION: 400MB allocation succeeded: "
             f"stdout={result.stdout!r}"
         )
 
