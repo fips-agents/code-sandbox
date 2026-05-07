@@ -1110,6 +1110,16 @@ class TestMemoryLimitBypasses:
             f"200MB allocation should fail under 200MB RLIMIT_AS: {result.stdout}"
         )
 
+    @pytest.mark.escape_vector
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS is Linux-specific")
+    async def test_default_rlimit_fires_before_cgroup(self):
+        """Allocation above the 512MB default RLIMIT_AS returns MemoryError, not a crash."""
+        code = "x = bytearray(600 * 1024 * 1024)\nprint('ALLOCATED')\n"
+        result = await execute_code(code, timeout=5.0)
+        assert "ALLOCATED" not in result.stdout
+        assert "MemoryError" in result.stderr
+
 
 # ---------------------------------------------------------------------------
 # Section 8: Pre-Import Attack Surface Tests
