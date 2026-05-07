@@ -1,0 +1,65 @@
+# fips-agents-cli template manifest.
+#
+# This file declares which paths in the code-sandbox template are managed
+# by the template (and so should be offered as patches by `fips-agents
+# patch`) and which belong to the user. The CLI reads this file from
+# the repo root after cloning, before computing drift in
+# `fips-agents patch check`.
+#
+# Without this manifest, `fips-agents patch` does not work for sandbox
+# projects — the CLI raises a clean error pointing the user here. The
+# presence of this file is what opts the sandbox template into the
+# patch flow. See:
+#   https://github.com/fips-agents/fips-agents-cli/issues/45
+
+schema_version: 1
+
+patch:
+  categories:
+
+    chart:
+      description: Helm chart templates and ACM policies
+      patterns:
+        - chart/templates/**/*
+        - chart/Chart.yaml
+        - chart/README.md
+        - chart/policies/**/*
+      ask_before_patch: true
+
+    docs:
+      description: Documentation files
+      patterns:
+        - CLAUDE.md
+        - CONTRIBUTING.md
+        - SECURITY.md
+        - docs/**/*
+      ask_before_patch: false
+
+    build:
+      description: Build and deployment files
+      patterns:
+        - Makefile
+        - Containerfile
+        - .gitignore
+        - .gitleaks.toml
+      ask_before_patch: true
+
+  never_patch:
+    # The sandbox runtime — executor, guardrails, seccomp wiring, audit,
+    # pipeline, profiles. Users may have customized these and shouldn't
+    # be silently overwritten.
+    - sandbox/**
+    # User's tests
+    - tests/**/*.py
+    # User's deploy values (default + named profiles)
+    - chart/values.yaml
+    - chart/values-ctf.yaml
+    - chart/values-standalone.yaml
+    # User's project metadata
+    - pyproject.toml
+    - README.md
+    - LICENSE
+    # Environment files
+    - .env*
+    # Per-project repo settings (CODEOWNERS, CI workflows)
+    - .github/**
