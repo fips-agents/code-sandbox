@@ -30,7 +30,7 @@ class ProfileResources(BaseModel):
     memory: str = "256Mi"
     cpu: str = "500m"
     timeout_max: float = 30.0
-    subprocess_memory_mb: int = 200
+    subprocess_memory_mb: int = 512
 
 
 class ScanStages(BaseModel):

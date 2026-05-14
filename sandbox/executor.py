@@ -355,7 +355,7 @@ async def execute_code(
     timeout: float = 10.0,
     *,
     runtime_restrict: bool = True,
-    memory_limit_mb: int = 200,
+    memory_limit_mb: int = 512,
     preimport: list[str] | None = None,
     allowed_imports: frozenset[str] | None = None,
     subprocess_landlock: bool = True,
@@ -370,7 +370,7 @@ async def execute_code(
             that blocks imports of modules not in *allowed_imports*.
             Defense-in-depth against AST bypasses.
         memory_limit_mb: RLIMIT_AS limit in megabytes applied inside the
-            subprocess.  Set to 0 to disable.  Defaults to 200 MB.
+            subprocess.  Set to 0 to disable.  Defaults to 512 MB.
         allowed_imports: Frozenset of top-level module names the user code
             may import at runtime.  Defaults to the minimal profile's
             allowlist when ``None``.

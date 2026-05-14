@@ -256,7 +256,7 @@ Landlock will block TCP connections, and UDP traffic will be dropped by NetworkP
 - Non-root user (uid 1001)
 - All Linux capabilities dropped
 - `/tmp` volume: 10Mi limit
-- Memory: 200MB RLIMIT_AS (minimal profile), 800MB (data-science profile)
+- Memory: 512MB RLIMIT_AS (minimal profile), 800MB (data-science profile)
 
 ### Layer 6 — NetworkPolicy
 
@@ -385,7 +385,7 @@ These are hard limits — do not violate them:
 - No fork bombs or processes that spawn unboundedly
 - Do not write more than 9MB to `/tmp` (limit is 10Mi; leave headroom)
 - Do not submit code with a timeout greater than 25 seconds
-- Do not attempt denial-of-service (memory exhaustion is capped at 200MB by RLIMIT_AS)
+- Do not attempt denial-of-service (memory exhaustion is capped at 512MB by RLIMIT_AS)
 
 ---
 
