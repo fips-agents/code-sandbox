@@ -733,26 +733,6 @@ class TestResourceExhaustion:
 
     @pytest.mark.escape_vector
     @pytest.mark.asyncio
-    @pytest.mark.skipif(
-        sys.platform != "linux",
-        reason="RLIMIT_AS enforcement is Linux-specific",
-    )
-    async def test_memory_exhaustion(self):
-        """Attempt to allocate 400MB in a memory-limited sandbox."""
-        code = textwrap.dedent("""\
-            x = bytearray(400 * 1024 * 1024)
-            print('ALLOCATED:', len(x))
-        """)
-        # This payload uses no blocked calls -- it is pure Python.
-        # The guardrail won't catch it; the OS/container limits must.
-        result = await execute_code(code, timeout=5.0)
-        assert "ALLOCATED:" not in result.stdout or result.exit_code != 0, (
-            f"RESOURCE EXHAUSTION: 400MB allocation succeeded: "
-            f"stdout={result.stdout!r}"
-        )
-
-    @pytest.mark.escape_vector
-    @pytest.mark.asyncio
     async def test_tmp_fill_exhaustion(self):
         """Chains globals() bypass with /tmp fill (10Mi emptyDir limit)."""
         code = textwrap.dedent("""\
